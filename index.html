@@ -1,0 +1,1575 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>EasyCena</title>
+    <link rel="icon" type="image/png" href="favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="shortcut icon" href="favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+    <link rel="manifest" href="site.webmanifest" />
+    <meta name="theme-color" content="#0056b3">
+
+    <!-- BEZPEČNOSŤ: Content Security Policy — povoľuje len známe zdroje
+         skriptov a pripojení (vlastný kód, cdnjs pre jsPDF, Google pre
+         prihlásenie a Drive API). Blokuje načítanie čohokoľvek cudzieho. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://accounts.google.com; connect-src 'self' https://www.googleapis.com https://accounts.google.com; frame-src https://accounts.google.com; img-src 'self' data: blob: https://ssl.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self';">
+
+    <!-- BEZPEČNOSŤ: integrity (SRI) — prehliadač odmietne knižnicu, ak by ju
+         niekto na CDN podvrhol. Google gsi/client SRI nepodporuje (mení sa). -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="Roboto-Regular-normal.js"></script>
+    <script src="Roboto-Bold-bold.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg-color: #1e1e1e;
+            --text-color: #ffffff;
+            --text-muted-color: #9ca3af;
+            --accent-color: #facc15;
+            --border-color: #333333;
+            --input-bg-color: #2d2d2d;
+            --input-border-color: #4b5563;
+            --primary-btn-bg-color: #facc15;
+            --primary-btn-text-color: #111827;
+            --secondary-btn-bg-color: #374151;
+            --danger-btn-bg-color: #ef4444;
+            --success-btn-bg-color: #22c55e;
+            --link-color: #facc15;
+            --recap-bg-color: #f8fafc;
+            --recap-border-color: #1e293b;
+            --recap-header-color: #0056b3;
+            --recap-total-color: #dc2626;
+            --discount-card-bg-color: #fef2f2;
+            --discount-header-color: #dc2626;
+        }
+
+        body[data-theme="light"] {
+            --bg-color: #f3f4f6;
+            --card-bg-color: #ffffff;
+            --text-color: #111827;
+            --text-muted-color: #4b5563;
+            --accent-color: #0056b3;
+            --border-color: #e5e7eb;
+            --input-bg-color: #f9fafb;
+            --input-border-color: #d1d5db;
+            --primary-btn-bg-color: #0056b3;
+            --primary-btn-text-color: #ffffff;
+            --secondary-btn-bg-color: #e5e7eb;
+            --danger-btn-bg-color: #ef4444;
+            --success-btn-bg-color: #22c55e;
+            --link-color: #0056b3;
+            --recap-bg-color: #ffffff;
+            --recap-border-color: #e5e7eb;
+            --recap-header-color: #0056b3;
+            --recap-total-color: #dc2626;
+            --discount-card-bg-color: #fef2f2;
+            --discount-header-color: #dc2626;
+        }
+
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 0; padding-bottom: 80px; }
+        h1, h2, h3, h4 { margin-top: 0; color: var(--text-color); }
+        .tab-content { display: none; padding: 15px; max-width: 600px; margin: 0 auto; }
+        .tab-content.active { display: block; }
+        
+        .card { background: var(--card-bg-color) !important; border: 1px solid var(--border-color) !important; border-radius: 8px; padding: 15px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); color: var(--text-color) !important; }
+        
+        .card h3 { color: var(--text-color) !important; border-left: 4px solid var(--accent-color); padding-left: 10px; text-transform: uppercase; font-size: 15px; letter-spacing: 1px; margin-bottom: 15px; }
+
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+        input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+
+        input[type="text"], input[type="number"], input[type="email"], input[type="date"], input[type="tel"], select, textarea { width: 100%; padding: 12px; margin-bottom: 12px; background-color: var(--input-bg-color) !important; border: 1px solid var(--input-border-color) !important; border-radius: 6px; font-size: 16px; color: var(--text-color) !important; box-sizing: border-box; transition: all 0.2s; }
+        /* Dark mode — invertujeme natívnu ikonu kalendára aby bola viditeľná na tmavom pozadí */
+        body:not([data-theme="light"]) input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(1) brightness(0.85);
+            cursor: pointer;
+        }
+        body[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator {
+            cursor: pointer;
+        }
+        input:focus, select:focus, textarea:focus { border-color: var(--accent-color) !important; outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 20%, transparent) !important; }
+        input::placeholder, textarea::placeholder { color: var(--text-muted-color) !important; }
+        
+        input:-webkit-autofill { -webkit-box-shadow: 0 0 0 30px var(--input-bg-color) inset !important; -webkit-text-fill-color: var(--text-color) !important; }
+        
+        label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 12px; color: var(--text-muted-color); text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        button { padding: 14px 15px; font-size: 16px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; box-sizing: border-box; transition: background-color 0.2s; text-transform: uppercase; letter-spacing: 0.5px; }
+        .btn-primary { background-color: var(--primary-btn-bg-color) !important; color: var(--primary-btn-text-color) !important; }
+        .btn-primary:active { background-color: color-mix(in srgb, var(--primary-btn-bg-color) 90%, black) !important; }
+        .btn-danger { background-color: var(--danger-btn-bg-color) !important; color: #ffffff !important; }
+        .btn-success { background-color: var(--success-btn-bg-color) !important; color: #ffffff !important; }
+        .btn-secondary { background-color: var(--secondary-btn-bg-color) !important; color: var(--text-color) !important; border: 1px solid var(--input-border-color) !important; }
+        .btn-small { width: auto; padding: 8px 12px; font-size: 13px; }
+        
+        .flex-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+        .flex-row input, .flex-row select { margin-bottom: 0; padding: 10px; }
+        
+        .polozka-riadok { border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 15px; }
+        .polozka-riadok:last-child { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
+        /* Farebné bodky kategórií pri položkách v zozname ponuky */
+        .polozka-riadok::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            align-self: center;
+            background: var(--text-muted-color);
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.15);
+        }
+        .polozka-riadok[data-kategoria="material"]::before { background: #facc15; }
+        .polozka-riadok[data-kategoria="zariadenie"]::before { background: #3b82f6; }
+        .polozka-riadok[data-kategoria="praca"]::before { background: #22c55e; }
+
+        /* Šípky na presun položiek / balíkov hore a dole */
+        .riadok-presun {
+            display: flex; flex-direction: column; gap: 3px;
+            flex-shrink: 0; align-self: center;
+        }
+        .sipka-presun {
+            width: 26px; height: 22px; padding: 0; margin: 0;
+            border: 1px solid var(--input-border-color);
+            background: var(--secondary-btn-bg-color);
+            color: var(--text-color);
+            border-radius: 5px; font-size: 11px; line-height: 1;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            -webkit-tap-highlight-color: transparent;
+            transition: background 0.12s, transform 0.08s;
+        }
+        .sipka-presun:hover { background: color-mix(in srgb, var(--accent-color) 25%, var(--secondary-btn-bg-color)); }
+        .sipka-presun:active { transform: scale(0.86); }
+        /* Krajné šípky sa zneaktívnia: prvá "hore" a posledná "dole" */
+        #zoznam-poloziek > *:first-child .sipka-hore,
+        #zoznam-poloziek > *:last-child .sipka-dole,
+        #zoznam-poloziek-balika > *:first-child .sipka-hore,
+        #zoznam-poloziek-balika > *:last-child .sipka-dole {
+            opacity: 0.2; pointer-events: none;
+        }
+
+        .mnoz-minus, .mnoz-plus { background-color: var(--secondary-btn-bg-color) !important; color: var(--accent-color) !important; border-color: var(--input-border-color) !important; }
+        
+        /* Balík štýly */
+        .balik-kontajner { border: 1px solid var(--input-border-color); border-radius: 8px; padding: 12px; margin-bottom: 15px; background: var(--card-bg-color); position: relative; }
+        .balik-kontajner strong { color: var(--accent-color) !important; }
+        .balik-kontajner-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+        .balik-label-text { color: var(--text-muted-color); font-size: 13px; }
+        .balik-nasobic { text-align: center; font-weight: bold; border: none; background: var(--input-bg-color); color: var(--accent-color); font-size: 15px; width: 40px; }
+        .balik-btn { padding: 6px; border-radius: 0; border: none; font-weight: bold; font-size: 16px; background: var(--secondary-btn-bg-color); color: var(--text-color); cursor: pointer; }
+        .balik-minus { border-radius: 6px 0 0 6px; }
+        .balik-plus { border-radius: 0 6px 6px 0; }
+        .balik-polozky-obal { padding-left: 10px; border-left: 2px solid var(--border-color); }
+        .v-baliku .polozka-nazov { background-color: transparent; border: 1px solid var(--border-color) !important; }
+        .v-baliku .polozka-cena { background-color: var(--card-bg-color) !important; color: var(--text-muted-color) !important; border: 1px solid var(--input-border-color) !important; }
+        
+        /* Cena input - editable state */
+        .polozka-cena-editable { background-color: var(--input-bg-color) !important; color: var(--text-color) !important; border-color: var(--accent-color) !important; }
+        .polozka-cena-readonly { background-color: var(--card-bg-color) !important; color: var(--text-muted-color) !important; border-color: var(--input-border-color) !important; }
+
+        /* ===== Hero header v Ponuke ===== */
+        .ponuka-hero {
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 12px; flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+        .ponuka-titulok {
+            margin: 0;
+            font-size: 26px;
+            font-weight: 700;
+            color: var(--text-color);
+            line-height: 1.2;
+            flex: 1; min-width: 0;
+        }
+        .ponuka-titulok .hero-emoji {
+            display: inline-block;
+            margin-left: 4px;
+            font-size: 0.85em;
+            vertical-align: middle;
+        }
+        .hero-controls {
+            display: flex; align-items: center; gap: 10px;
+            flex-shrink: 0;
+        }
+        .autosave-status {
+            font-size: 12px;
+            color: var(--text-muted-color);
+            white-space: nowrap;
+            padding: 4px 8px;
+            border-radius: 6px;
+            background: color-mix(in srgb, var(--text-muted-color) 8%, transparent);
+            transition: background 0.3s, color 0.3s;
+        }
+        .autosave-status.flash {
+            background: color-mix(in srgb, var(--success-btn-bg-color) 25%, transparent);
+            color: var(--text-color);
+        }
+        /* Cloud status indikátor — vedľa autosave-status */
+        .cloud-status {
+            font-size: 12px;
+            color: var(--text-muted-color);
+            white-space: nowrap;
+            padding: 4px 8px;
+            border-radius: 6px;
+            background: color-mix(in srgb, var(--text-muted-color) 8%, transparent);
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+            user-select: none;
+        }
+        .cloud-status:hover { background: color-mix(in srgb, var(--accent-color) 15%, transparent); }
+        .cloud-status.ok      { color: var(--success-btn-bg-color); }
+        .cloud-status.busy    { animation: cloud-pulse 1.5s ease-in-out infinite; color: var(--accent-color); }
+        .cloud-status.pending { color: var(--accent-color); }
+        .cloud-status.error   { color: var(--danger-btn-bg-color); }
+        /* Vypršané prihlásenie do Drive — výrazné, neprehliadnuteľné upozornenie */
+        .cloud-status.expired {
+            color: #fff;
+            background: var(--danger-btn-bg-color);
+            font-weight: 700;
+            animation: cloud-pulse 1.5s ease-in-out infinite;
+        }
+        .cloud-status.logged-out { display: none; }
+        @keyframes cloud-pulse {
+            0%, 100% { opacity: 0.55; }
+            50%      { opacity: 1; }
+        }
+        .hero-theme-btn {
+            background: transparent;
+            border: 1px solid var(--input-border-color);
+            border-radius: 8px;
+            width: 36px; height: 36px;
+            font-size: 18px; line-height: 1;
+            cursor: pointer;
+            padding: 0; margin: 0;
+            display: inline-flex; align-items: center; justify-content: center;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .hero-theme-btn:hover {
+            border-color: var(--accent-color);
+            background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+        }
+        .hero-theme-btn:active { transform: scale(0.95); }
+        .btn-hero-cta {
+            display: block; width: 100%;
+            padding: 16px 18px;
+            margin: 0 0 15px 0;
+            background: var(--accent-color);
+            color: #000;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px; font-weight: 700;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(250, 204, 21, 0.25);
+            transition: transform 0.1s, box-shadow 0.15s, filter 0.15s;
+        }
+        .btn-hero-cta:hover { filter: brightness(1.05); box-shadow: 0 3px 12px rgba(250, 204, 21, 0.35); }
+        .btn-hero-cta:active { transform: translateY(1px); }
+        body[data-theme="light"] .btn-hero-cta {
+            background: var(--accent-color);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(0, 86, 179, 0.25);
+        }
+        body[data-theme="light"] .btn-hero-cta:hover {
+            box-shadow: 0 3px 12px rgba(0, 86, 179, 0.35);
+        }
+        /* Zelený variant pre kontextové CTA (Pridať z katalógu, atď.) */
+        .btn-hero-cta.success {
+            background: var(--success-btn-bg-color);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(34, 197, 94, 0.25);
+        }
+        .btn-hero-cta.success:hover {
+            box-shadow: 0 3px 12px rgba(34, 197, 94, 0.35);
+        }
+        /* Kompaktný variant — používa sa keď CTA stojí v karte
+           a nepotrebuje toľko vertikálneho priestoru ako hlavné CTA. */
+        .btn-hero-cta.compact {
+            padding: 13px 16px;
+            font-size: 14px;
+            letter-spacing: 0.4px;
+        }
+
+        /* ===== Toolbar pre Archív aj Katalóg (search + štatistiky) ===== */
+        .archiv-toolbar, .katalog-toolbar {
+            position: sticky; top: 0; z-index: 5;
+            background: var(--card-bg-color);
+            padding: 8px 0 12px 0;
+            margin: -8px 0 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .archiv-search-wrap, .katalog-search-wrap { position: relative; margin-bottom: 10px; }
+        .archiv-search-wrap input, .katalog-search-wrap input {
+            width: 100%;
+            padding: 10px 36px 10px 12px;
+            box-sizing: border-box;
+            margin-bottom: 0;
+            font-size: 15px;
+        }
+        .archiv-search-wrap button#archiv-hladaj-clear,
+        .katalog-search-wrap button#katalog-hladaj-clear {
+            position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+            background: transparent; border: none; color: var(--text-muted-color);
+            font-size: 16px; cursor: pointer; padding: 4px 10px;
+            display: none; line-height: 1;
+        }
+        .archiv-search-wrap.has-value button#archiv-hladaj-clear,
+        .katalog-search-wrap.has-value button#katalog-hladaj-clear { display: block; }
+        .archiv-search-wrap button#archiv-hladaj-clear:hover,
+        .katalog-search-wrap button#katalog-hladaj-clear:hover { color: var(--text-color); }
+        .archiv-ovladace, .katalog-ovladace {
+            display: flex; flex-wrap: wrap; gap: 8px;
+            align-items: center; margin-bottom: 10px;
+        }
+        .archiv-filter, .katalog-filter {
+            display: inline-flex; gap: 0;
+            border: 1px solid var(--input-border-color);
+            border-radius: 6px; overflow: hidden; flex-wrap: wrap;
+        }
+        .archiv-pill, .katalog-pill {
+            background: transparent; color: var(--text-muted-color);
+            border: none; border-right: 1px solid var(--input-border-color);
+            padding: 6px 12px; cursor: pointer; font-size: 13px;
+            font-weight: 500; transition: background 0.15s, color 0.15s;
+        }
+        .archiv-pill:last-child, .katalog-pill:last-child { border-right: none; }
+        .archiv-pill:hover, .katalog-pill:hover { background: var(--secondary-btn-bg-color); color: var(--text-color); }
+        .archiv-pill.aktivny, .katalog-pill.aktivny {
+            background: var(--accent-color); color: #000;
+            font-weight: bold;
+        }
+        .archiv-triedit, .katalog-triedit {
+            margin-bottom: 0; padding: 6px 8px;
+            font-size: 13px; flex: 0 1 auto; min-width: 0;
+        }
+        .archiv-statistiky, .katalog-statistiky {
+            display: flex; flex-wrap: wrap; gap: 6px 16px;
+            font-size: 13px; color: var(--text-muted-color);
+        }
+        .archiv-statistiky .stat-item,
+        .katalog-statistiky .stat-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+        .archiv-statistiky .stat-cislo,
+        .katalog-statistiky .stat-cislo { color: var(--text-color); font-weight: bold; }
+        .archiv-statistiky .stat-suma,
+        .katalog-statistiky .stat-suma { color: var(--accent-color); font-weight: bold; }
+        .archiv-statistiky .stat-warn,
+        .katalog-statistiky .stat-warn { color: var(--danger-btn-bg-color); font-weight: bold; }
+        .archiv-prazdny, .katalog-prazdny { padding: 30px 10px; text-align: center; color: var(--text-muted-color); font-size: 14px; }
+
+        /* ===== Karta jednej ponuky v Archíve ===== */
+        .archiv-karta {
+            border: 1px solid var(--input-border-color);
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            background: var(--card-bg-color);
+            transition: border-color 0.15s, transform 0.1s;
+        }
+        .archiv-karta:hover {
+            border-color: var(--accent-color);
+        }
+        .archiv-karta-hlavicka {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            gap: 10px; margin-bottom: 6px;
+        }
+        .archiv-karta-cislo {
+            color: var(--accent-color);
+            font-weight: bold;
+            font-size: 15px;
+            display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px;
+        }
+        .archiv-karta-suma {
+            color: var(--text-color);
+            font-weight: bold;
+            font-size: 17px;
+            white-space: nowrap;
+        }
+        .archiv-stitok {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            line-height: 1.4;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .archiv-stitok.zeleny {
+            background: var(--success-btn-bg-color);
+            color: #fff;
+        }
+        .archiv-stitok.neutralny {
+            background: var(--secondary-btn-bg-color);
+            color: var(--text-muted-color);
+            border: 1px solid var(--input-border-color);
+        }
+        .archiv-karta-zakaznik {
+            color: var(--text-color);
+            font-size: 15px;
+            margin-bottom: 10px;
+        }
+        .archiv-karta-datum {
+            color: var(--text-muted-color);
+            font-size: 13px;
+            margin-left: 4px;
+        }
+        .archiv-karta-tlacidla {
+            display: flex; flex-wrap: wrap; gap: 5px;
+        }
+        .archiv-karta-tlacidla .archiv-btn-supis { flex: 1 1 100%; margin-bottom: 3px; }
+        .archiv-karta-tlacidla .archiv-btn-supis-otvor { background-color: #f97316 !important; }
+        .archiv-karta-tlacidla .archiv-btn-duplikuj { flex: 1.2; }
+        .archiv-karta-tlacidla .archiv-btn-otvor    { flex: 1; }
+
+        /* ===== Karta jednej položky/balíčka v Katalógu ===== */
+        .katalog-karta {
+            display: flex; align-items: center; gap: 10px;
+            border: 1px solid var(--input-border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            background: var(--card-bg-color);
+            transition: border-color 0.15s;
+        }
+        .katalog-karta:hover { border-color: var(--accent-color); }
+        .katalog-karta.varovanie {
+            border-left: 3px solid var(--danger-btn-bg-color);
+            background: color-mix(in srgb, var(--danger-btn-bg-color) 10%, transparent);
+        }
+        .katalog-karta-bodka {
+            width: 8px; height: 8px; border-radius: 50%;
+            flex-shrink: 0;
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.15);
+        }
+        .katalog-karta-bodka.k-material   { background: #facc15; }
+        .katalog-karta-bodka.k-zariadenie { background: #3b82f6; }
+        .katalog-karta-bodka.k-praca      { background: #22c55e; }
+        .katalog-karta-bodka.k-balik      { background: #a855f7; }
+        .katalog-karta-info {
+            flex: 1; min-width: 0; overflow: hidden;
+        }
+        .katalog-karta-nazov {
+            color: var(--text-color);
+            font-weight: bold;
+            font-size: 14px;
+            display: block;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .katalog-karta-detail {
+            color: var(--text-muted-color);
+            font-size: 12px;
+            margin-top: 2px;
+        }
+        .katalog-karta-stitok-warn {
+            display: inline-block;
+            background: var(--danger-btn-bg-color); color: #fff;
+            padding: 1px 6px; border-radius: 4px;
+            font-size: 10px; font-weight: bold;
+            text-transform: uppercase; letter-spacing: 0.3px;
+            margin-left: 6px; vertical-align: middle;
+        }
+        .katalog-karta-tlacidla {
+            display: flex; gap: 5px; flex-shrink: 0;
+        }
+        
+        .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background-color: var(--card-bg-color); border-top: 1px solid var(--border-color); display: flex; justify-content: space-around; z-index: 1000; padding-bottom: env(safe-area-inset-bottom); }
+        .nav-item { flex: 1; text-align: center; padding: 12px 0; color: var(--text-muted-color); font-weight: bold; font-size: 12px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: color 0.2s; text-transform: uppercase; }
+        .nav-item.active { color: var(--link-color); border-top: 3px solid var(--link-color); margin-top: -2px; }
+        .nav-icon { font-size: 20px; }
+        
+        #vlastny-nasepkavac { position: absolute; display: none; background: var(--input-bg-color); border: 2px solid var(--accent-color); border-radius: 0 0 6px 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.5); z-index: 1001; max-height: 250px; overflow-y: auto; color: var(--text-color); }
+        .nasepkavac-polozka { padding: 12px; border-bottom: 1px solid var(--input-border-color); cursor: pointer; display: flex; align-items: center; gap: 10px; }
+        .nasepkavac-polozka:hover,
+        .nasepkavac-polozka.zvyraznena { background-color: var(--secondary-btn-bg-color); }
+        .nasepkavac-polozka .np-text { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+        .nasepkavac-bodka { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(255,255,255,0.15); }
+        .nasepkavac-bodka.k-material { background: #facc15; }
+        .nasepkavac-bodka.k-zariadenie { background: #3b82f6; }
+        .nasepkavac-bodka.k-praca { background: #22c55e; }
+        .nasepkavac-bodka.k-balik { background: #a855f7; }
+        
+        p, small { color: var(--text-muted-color) !important; }
+        .zlavovy-riadok { display: flex; justify-content: space-between; color: var(--danger-btn-bg-color); font-size: 14px; margin-bottom: 5px; }
+        strong { color: var(--accent-color) !important; }
+        
+        /* Specific overrides for certain cards */
+        .discount-card { border-left: 4px solid var(--danger-btn-bg-color); background-color: var(--card-bg-color); }
+        .discount-card h3 { color: var(--text-color) !important; }
+        body[data-theme="light"] .discount-card { background-color: var(--discount-card-bg-color) !important; }
+        body[data-theme="light"] .discount-card h3 { color: var(--discount-header-color) !important; }
+
+        [style*="background-color: #f8fafc"] { background-color: var(--recap-bg-color) !important; border-color: var(--recap-border-color) !important; }
+        [style*="background-color: #f8fafc"] h3 { color: var(--recap-header-color) !important; }
+        [style*="background-color: #f8fafc"] h2 { color: var(--recap-total-color) !important; }
+        #cislo-ponuky { font-weight: bold; color: var(--accent-color) !important; }
+        [style*="border-left: 4px solid #0056b3"] { border-left-color: var(--accent-color) !important; }
+
+        /* ============== ACCORDION NASTAVENIA ============== */
+        .settings-accordion { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+        .acc-item { background: var(--card-bg-color); border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; transition: border-color 0.2s; }
+        .acc-item.open { border-color: var(--accent-color); }
+        .acc-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+        .acc-head:hover { background: color-mix(in srgb, var(--accent-color) 6%, transparent); }
+        .acc-icon { width: 36px; height: 36px; border-radius: 8px; background: var(--input-bg-color); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+        .acc-label { flex: 1; min-width: 0; }
+        .acc-name { color: var(--text-color); font-size: 15px; font-weight: 600; margin: 0; }
+        .acc-sub { color: var(--text-muted-color); font-size: 12px; margin: 2px 0 0; }
+        .acc-arrow { color: var(--text-muted-color); font-size: 20px; transition: transform 0.2s; flex-shrink: 0; line-height: 1; }
+        .acc-item.open .acc-arrow { transform: rotate(90deg); color: var(--accent-color); }
+        .acc-body { display: none; padding: 0 16px 16px; border-top: 1px solid var(--border-color); }
+        .acc-item.open .acc-body { display: block; padding-top: 16px; }
+        .acc-body > :first-child { margin-top: 0; }
+        .acc-body label { margin-top: 12px; }
+        .acc-body label:first-child { margin-top: 0; }
+
+        .settings-section-hint { font-size: 12px; color: var(--text-muted-color); margin: 0 0 10px; line-height: 1.4; }
+        .brand-logo-row { display: flex; align-items: center; gap: 10px; background: var(--input-bg-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 12px; }
+        .brand-logo-row img { height: 24px; max-width: 70px; object-fit: contain; background: white; border-radius: 3px; padding: 2px; }
+        .brand-logo-row .brand-name { flex: 1; color: var(--text-color); font-size: 14px; font-weight: 500; }
+
+        /* Sticky save lišta — viditeľná iba keď je tab-nastavenia aktívny (display:none rodič skryje aj fixed child) */
+        .settings-sticky-save { position: fixed; bottom: 64px; left: 0; right: 0; background: var(--card-bg-color); border-top: 1px solid var(--border-color); padding: 10px 15px calc(10px + env(safe-area-inset-bottom)); display: flex; gap: 10px; align-items: center; z-index: 999; box-shadow: 0 -4px 12px rgba(0,0,0,0.2); }
+        /* Sticky action bar pre Ponuku — viditeľný len keď je tab-ponuka aktívny */
+        .ponuka-action-bar {
+            position: fixed; bottom: 64px; left: 0; right: 0;
+            background: var(--card-bg-color);
+            border-top: 1px solid var(--border-color);
+            padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+            display: flex; gap: 8px; align-items: stretch;
+            z-index: 999;
+            box-shadow: 0 -4px 12px rgba(0,0,0,0.25);
+        }
+        .ponuka-action-bar button {
+            flex: 1; margin: 0;
+            padding: 13px 8px;
+            font-size: 14px; font-weight: 600;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+        .ponuka-action-bar .btn-ulozit { flex: 1.4; }
+        /* Aby spodné tlačidlá v Ponuke neboli prekryté sticky barom */
+        #tab-ponuka.active { padding-bottom: 140px; }
+        /* Info-hint v sekcii Súhrn keď tlačidlá sú v sticky bare */
+        .suhrn-hint {
+            text-align: center;
+            color: var(--text-muted-color);
+            font-size: 13px;
+            padding: 16px 12px;
+            border: 1px dashed var(--border-color);
+            border-radius: 8px;
+            line-height: 1.5;
+        }
+        .suhrn-hint strong { color: var(--accent-color) !important; }
+        .settings-sticky-save button { flex: 1; margin: 0; padding: 12px; font-size: 15px; }
+        .settings-save-status { font-size: 12px; color: var(--text-muted-color); white-space: nowrap; display: none; }
+        .settings-save-status.dirty { color: var(--accent-color); display: inline; }
+        .settings-save-status.saved { color: var(--success-btn-bg-color); display: inline; }
+        #tab-nastavenia.active { padding-bottom: 90px; }
+
+        /* ============== Visually hidden (skríner-friendly labely) ============== */
+        .visually-hidden {
+            position: absolute !important;
+            width: 1px; height: 1px;
+            padding: 0; margin: -1px; overflow: hidden;
+            clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+        }
+
+        /* ============== Field label (mini popisok pred inputom) ============== */
+        .field-label {
+            display: block;
+            margin: 0 0 4px 0;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted-color);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            line-height: 1.4;
+        }
+        /* V flex-row variantu — label vľavo, input vpravo. Jemnejší vzhľad. */
+        .flex-row > .field-label.inline {
+            margin: 0;
+            align-self: center;
+            white-space: nowrap;
+        }
+
+        /* ============== SEKCIÁLNE NADPISY (uppercase mini-label) ============== */
+        .section-label {
+            margin: 0 0 12px 0;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted-color);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            line-height: 1.4;
+        }
+        .section-label .section-label-hint {
+            display: inline;
+            margin-left: 6px;
+            text-transform: none;
+            font-weight: normal;
+            color: var(--text-muted-color);
+            font-size: 11px;
+            letter-spacing: 0;
+        }
+
+        /* ============== PROGRESS BAR TABU PONUKA ============== */
+        .ponuka-progress {
+            position: sticky;
+            top: 0;
+            z-index: 900;
+            background: var(--bg-color);
+            border-bottom: 1px solid var(--border-color);
+            margin: 0 -15px 15px;
+            padding: 6px 10px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            height: 46px;
+            box-sizing: border-box;
+        }
+        .pp-step {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            padding: 4px 8px 6px;
+            border-bottom: 2px solid transparent;
+            flex-shrink: 0;
+            transition: color 0.2s, border-color 0.2s;
+            color: var(--text-muted-color);
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        .pp-step:hover { color: var(--text-color); }
+        .pp-num {
+            font-size: 13px;
+            font-weight: 700;
+            color: inherit;
+            flex-shrink: 0;
+        }
+        .pp-label {
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            text-transform: uppercase;
+        }
+        .pp-step.active {
+            color: var(--accent-color);
+            border-bottom-color: var(--accent-color);
+        }
+        .pp-step.done {
+            color: var(--text-color);
+            border-bottom-color: color-mix(in srgb, var(--accent-color) 40%, transparent);
+        }
+        .pp-line {
+            flex: 1;
+            height: 1px;
+            background: var(--border-color);
+            min-width: 6px;
+            opacity: 0.5;
+        }
+        .pp-line.done { background: color-mix(in srgb, var(--accent-color) 40%, transparent); opacity: 1; }
+
+        /* Menšie zobrazenie pre úzke telefóny */
+        @media (max-width: 380px) {
+            .ponuka-progress { gap: 2px; padding: 6px 6px; height: 44px; }
+            .pp-step { padding: 3px 4px; gap: 4px; }
+            .pp-num { width: 20px; height: 20px; font-size: 11px; }
+            .pp-label { font-size: 10px; letter-spacing: 0.2px; }
+        }
+
+        /* ===== TOAST notifikácie ===== */
+        #toast-container {
+            position: fixed;
+            bottom: 140px; left: 50%;
+            transform: translateX(-50%);
+            display: flex; flex-direction: column; gap: 8px;
+            z-index: 10000;
+            pointer-events: none;
+            width: max-content; max-width: calc(100% - 30px);
+        }
+        .toast {
+            padding: 12px 18px;
+            border-radius: 8px;
+            background: var(--card-bg-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+            font-size: 14px; font-weight: 500;
+            line-height: 1.4;
+            pointer-events: auto;
+            animation: toast-in 0.25s ease-out;
+            max-width: 480px;
+        }
+        .toast.success { border-color: var(--success-btn-bg-color); }
+        .toast.error   { border-color: var(--danger-btn-bg-color); }
+        .toast.info    { border-color: var(--accent-color); }
+        .toast.fading  { animation: toast-out 0.3s ease-in forwards; }
+        @keyframes toast-in {
+            from { transform: translateY(20px); opacity: 0; }
+            to   { transform: translateY(0);    opacity: 1; }
+        }
+        @keyframes toast-out {
+            from { transform: translateY(0);    opacity: 1; }
+            to   { transform: translateY(20px); opacity: 0; }
+        }
+
+        /* ===== Sync conflict dialog ===== */
+        .sync-dialog-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999; padding: 20px;
+        }
+        .sync-dialog {
+            background: var(--card-bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px; max-width: 520px; width: 100%;
+            max-height: calc(100vh - 40px); overflow-y: auto;
+        }
+        .sync-dialog h3 { margin: 0 0 12px 0; font-size: 18px; color: var(--text-color); }
+        .sync-dialog .sync-meta {
+            background: var(--input-bg-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        .sync-dialog .sync-meta strong { color: var(--accent-color) !important; }
+        .sync-dialog .sync-option {
+            display: block; width: 100%;
+            text-align: left;
+            background: var(--input-bg-color);
+            border: 1px solid var(--input-border-color);
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-top: 8px;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+            color: var(--text-color);
+            font-size: 14px;
+        }
+        .sync-dialog .sync-option:hover { border-color: var(--accent-color); }
+        .sync-dialog .sync-option.recommended {
+            border-color: var(--accent-color);
+            background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+        }
+        .sync-dialog .sync-option-title {
+            font-weight: bold;
+            color: var(--text-color);
+            margin-bottom: 4px;
+        }
+        .sync-dialog .sync-option-desc {
+            font-size: 12px;
+            color: var(--text-muted-color);
+            line-height: 1.4;
+        }
+        .sync-dialog .sync-cancel {
+            display: block; width: 100%;
+            background: transparent; border: none;
+            color: var(--text-muted-color);
+            font-size: 13px;
+            padding: 12px 0 0 0; margin: 8px 0 0 0;
+            cursor: pointer; text-align: center;
+        }
+        .sync-dialog .sync-cancel:hover { color: var(--text-color); }
+
+        /* ===== Drive zoznam záloh dialog ===== */
+        .sync-dialog .backup-list { margin: 12px 0; max-height: 50vh; overflow-y: auto; }
+        .sync-dialog .backup-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 12px;
+            border: 1px solid var(--input-border-color);
+            border-radius: 8px;
+            margin-bottom: 6px;
+            cursor: pointer;
+            transition: border-color 0.15s;
+        }
+        .sync-dialog .backup-item:hover { border-color: var(--accent-color); }
+        .sync-dialog .backup-item-name { font-size: 13px; color: var(--text-color); }
+        .sync-dialog .backup-item-meta { font-size: 11px; color: var(--text-muted-color); }
+
+        @media (min-width: 768px) {
+            .settings-accordion { max-width: 720px; margin-left: auto; margin-right: auto; }
+            .acc-body .flex-row { gap: 12px; }
+            /* Sticky lišty na desktope nemajú zaberať celú šírku — zúžia sa
+               a centrujú, aby tlačidlá nepôsobili neprimerane veľké. */
+            .ponuka-action-bar,
+            .settings-sticky-save {
+                left: 50%;
+                right: auto;
+                transform: translateX(-50%);
+                max-width: 720px;
+                width: calc(100% - 30px);
+                border-radius: 12px 12px 0 0;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="tab-ponuka" class="tab-content active">
+        <div class="ponuka-hero">
+            <h1 id="ponuka-titulok" class="ponuka-titulok">Úprava ponuky <span class="hero-emoji">🖊️</span></h1>
+            <div class="hero-controls">
+                <span id="autosave-status" class="autosave-status" title="Stav automatického ukladania">💾 Uložené</span>
+                <span id="cloud-status" class="cloud-status logged-out" title="Cloud záloha — kliknite pre Nastavenia"></span>
+                <button type="button" id="theme-quick-toggle" class="hero-theme-btn" aria-label="Prepnúť tmavý / svetlý režim">🌙</button>
+            </div>
+        </div>
+
+        <button id="nova-ponuka-btn" class="btn-hero-cta">+ NOVÁ CENOVÁ PONUKA</button>
+
+        <div id="ponuka-progress" class="ponuka-progress" role="navigation" aria-label="Kroky ponuky">
+            <div class="pp-step active" data-step="klient" role="button" tabindex="0">
+                <span class="pp-num">1</span>
+                <span class="pp-label">Klient</span>
+            </div>
+            <div class="pp-line"></div>
+            <div class="pp-step" data-step="polozky" role="button" tabindex="0">
+                <span class="pp-num">2</span>
+                <span class="pp-label">Položky</span>
+            </div>
+            <div class="pp-line"></div>
+            <div class="pp-step" data-step="podmienky" role="button" tabindex="0">
+                <span class="pp-num">3</span>
+                <span class="pp-label">Podmienky</span>
+            </div>
+            <div class="pp-line"></div>
+            <div class="pp-step" data-step="suhrn" role="button" tabindex="0">
+                <span class="pp-num">4</span>
+                <span class="pp-label">Súhrn</span>
+            </div>
+        </div>
+
+        <div class="card" data-section="klient">
+            <h3 class="section-label">Údaje o klientovi</h3>
+            <input type="text" id="cislo-ponuky" placeholder="Číslo ponuky (napr. CP-2026-001)" aria-label="Číslo ponuky">
+
+            <!-- Väzba súpisu prác — viditeľné LEN v režime Súpis prác -->
+            <div id="supis-vazba-box" style="display: none; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--accent-color); border-radius: 6px; background: color-mix(in srgb, var(--accent-color) 6%, transparent);">
+                <label for="supis-nadpis" class="field-label" style="margin-bottom: 6px;">Nadpis dokumentu</label>
+                <input type="text" id="supis-nadpis" placeholder="SÚPIS PRÁC" maxlength="60" style="margin-bottom: 12px;">
+                <label for="supis-vazba-typ" class="field-label" style="margin-bottom: 6px;">Súpis prác viazaný na</label>
+                <div class="flex-row" style="margin-bottom: 0;">
+                    <select id="supis-vazba-typ" style="flex: 2; margin-bottom: 0;">
+                        <option value="cp">k cenovej ponuke č.</option>
+                        <option value="zakazka">k zákazke č.</option>
+                        <option value="faktura">k faktúre č.</option>
+                        <option value="ine">vlastný text…</option>
+                    </select>
+                    <input type="text" id="supis-vazba-cislo" placeholder="Číslo" style="flex: 1; margin-bottom: 0;" aria-label="Číslo väzby súpisu">
+                </div>
+                <input type="text" id="supis-vazba-custom" placeholder="Napr. k objednávke č." style="display: none; margin-top: 8px; margin-bottom: 0;" aria-label="Vlastný text väzby">
+
+                <label for="supis-podpis-rezim" class="field-label" style="margin-top: 12px; margin-bottom: 6px;">Podpisová časť (dole na PDF)</label>
+                <select id="supis-podpis-rezim" style="margin-bottom: 0;">
+                    <option value="ciary">Čiary „Odovzdal / Prevzal"</option>
+                    <option value="podpis">Podpis dodávateľa (ako v ponuke)</option>
+                    <option value="nic">Nič (bez podpisovej časti)</option>
+                </select>
+            </div>
+
+            <input type="text" id="meno-zakaznika" placeholder="Meno / Názov firmy" aria-label="Meno alebo názov firmy">
+            <input type="text" id="ulica-zakaznika" placeholder="Ulica a číslo" aria-label="Ulica a číslo">
+            <input type="text" id="mesto-zakaznika" placeholder="PSČ a Mesto" aria-label="PSČ a mesto">
+            <div class="flex-row">
+                <input type="text" id="ico-zakaznika" placeholder="IČO (nepovinné)" aria-label="IČO" style="flex: 1;">
+                <input type="text" id="dic-zakaznika" placeholder="DIČ (nepovinné)" aria-label="DIČ" style="flex: 1;">
+            </div>
+            <input type="text" id="icdph-zakaznika" placeholder="IČ DPH (nepovinné)" aria-label="IČ DPH">
+            <div class="flex-row">
+                <input type="text" id="telefon-zakaznika" placeholder="Telefón" aria-label="Telefón">
+                <input type="email" id="email-zakaznika" placeholder="E-mail" aria-label="E-mail">
+            </div>
+        </div>
+
+        <div id="obal-logo-znacky" data-section="klient" style="margin-bottom: 15px;">
+            <label for="ponuka-znacka" class="field-label">Logo značky na PDF (voliteľné)</label>
+            <select id="ponuka-znacka" style="width: 100%; padding: 8px; font-size: 14px; background-color: var(--input-bg-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
+                <option value="">-- Bez loga značky --</option>
+            </select>
+        </div>
+
+        <div class="card" data-section="klient" style="margin-bottom: 25px;">
+            <h3 class="section-label">Dátumy a miesto vystavenia</h3>
+            <div class="flex-row" style="margin-bottom: 10px;">
+                <div style="flex: 1;">
+                    <label for="ponuka-miesto-vystavenia" class="field-label">Miesto vystavenia</label>
+                    <input type="text" id="ponuka-miesto-vystavenia" placeholder="Napr. Bratislava" style="margin-bottom: 0;">
+                </div>
+                <div style="flex: 1;">
+                    <label for="ponuka-datum-vystavenia" class="field-label">Dátum vystavenia</label>
+                    <input type="date" id="ponuka-datum-vystavenia" style="margin-bottom: 0;">
+                </div>
+            </div>
+            <div id="obal-platnost">
+                <label for="platnost-do" class="field-label">Platnosť ponuky do <span class="section-label-hint">(nechaj prázdne pre 30 dní)</span></label>
+                <input type="date" id="platnost-do">
+            </div>
+        </div>
+
+        <!-- DPH prepínač — viditeľný len ak je firma platca DPH (profil) -->
+        <div id="obal-dph-prepinac" class="card" data-section="polozky" style="display: none; margin-bottom: 25px;">
+            <label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: normal; margin: 0; text-transform: none; font-size: 15px; color: var(--text-color); cursor: pointer;">
+                <span>
+                    Účtovať DPH v tejto ponuke
+                    <span class="section-label-hint" style="display: block; text-transform: none; letter-spacing: 0; font-size: 12px; margin-top: 4px; color: var(--text-muted-color);">Vypni pri prenose daňovej povinnosti (medzi platcami DPH). IČ DPH zostáva na ponuke.</span>
+                </span>
+                <label for="ponuka-dph-toggle" style="display: flex; align-items: center; cursor: pointer; flex-shrink: 0;">
+                    <input type="checkbox" id="ponuka-dph-toggle" style="display: none;" checked>
+                    <span style="position: relative; width: 44px; height: 24px; background-color: #374151; border-radius: 9999px; transition: background-color 0.2s;">
+                        <span style="position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background-color: white; border-radius: 9999px; transition: transform 0.2s;"></span>
+                    </span>
+                </label>
+            </label>
+        </div>
+
+        <div class="card" data-section="polozky">
+            <h3 class="section-label">Položky ponuky</h3>
+            <div id="zoznam-poloziek"></div>
+            <button type="button" class="btn-hero-cta success compact" id="pridat-polozku-btn" style="margin: 10px 0 0 0;">+ PRIDAŤ Z KATALÓGU</button>
+        </div>
+        
+        <div class="card discount-card" data-section="polozky">
+            <h3 class="section-label">Zľavy</h3>
+            <div id="zoznam-zliav"></div>
+            <button type="button" class="btn-danger" id="pridat-zlavu-btn" style="margin-top: 10px;">+ Pridať zľavu</button>
+        </div>
+
+        <div class="card" data-section="polozky" style="background-color: var(--recap-bg-color); border: 2px solid var(--recap-border-color);">
+            <h3 class="section-label" style="text-align: center;">Rekapitulácia kategórií</h3>
+            <div id="rekapitulacia-kategorie" style="margin-bottom: 15px;">
+                </div>
+
+            <h3 class="section-label" style="margin-top: 15px; padding-top: 15px; border-top: 2px solid var(--border-color); text-align: center;">Celková suma ponuky</h3>
+            <div id="zobrazenie-aplikovanych-zliav-global" style="margin-bottom: 5px;"></div>
+            
+            <div id="zobrazenie-zaklad-bez-dph" style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 16px;">
+                <span>Základ bez DPH:</span>
+                <span id="zaklad-bez-dph" style="font-weight: bold;">0.00 €</span>
+            </div>
+            <div id="zobrazenie-dph" style="display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 16px;">
+                <span>DPH (23%):</span>
+                <span id="hodnota-dph">0.00 €</span>
+            </div>
+            <div style="text-align: center; margin-top: 10px;">
+                <h2 style="margin: 0; font-size: 24px;"><span id="konecna-suma-label">SPOLU:</span> <span id="konecna-suma">0.00</span> €</h2>
+            </div>
+        </div>
+
+        <div id="obal-podmienky" class="card" data-section="podmienky" style="margin-bottom: 25px;">
+            <h3 class="section-label">Podmienky ponuky</h3>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div class="flex-row" style="margin-bottom: 0;">
+                    <label class="field-label inline" style="flex: 1;">Dodacie podmienky</label>
+                    <input type="text" id="ponuka-dodacie" list="dodacie-zoznam" style="flex: 2; margin: 0; padding: 10px; font-size: 14px;" placeholder="Vyber alebo vpíš vlastné...">
+                    <datalist id="dodacie-zoznam">
+                        <option value="dohodou">
+                        <option value="ihneď">
+                        <option value="do 14 dní">
+                        <option value="do 30 dní">
+                    </datalist>
+                </div>
+                <div class="flex-row" style="margin-bottom: 0;">
+                    <label class="field-label inline" style="flex: 1;">Platobné podmienky</label>
+                    <input type="text" id="ponuka-platobne" list="platobne-zoznam" style="flex: 2; margin: 0; padding: 10px; font-size: 14px;" placeholder="Vyber alebo vpíš vlastné...">
+                    <datalist id="platobne-zoznam">
+                        <option value="dohodou">
+                        <option value="zálohová platba 50%">
+                        <option value="hotovosť po dodaní">
+                        <option value="prevodný príkaz (14 dní)">
+                    </datalist>
+                </div>
+                <div class="flex-row" style="margin-bottom: 0;">
+                    <label class="field-label inline" style="flex: 1;">Záruka (zariadenie)</label>
+                    <input type="text" id="ponuka-zaruka-zariadenie" value="36 mesiacov na dodané zariadenia" style="flex: 2; margin: 0; padding: 10px; font-size: 14px;">
+                </div>
+                <div class="flex-row" style="margin-bottom: 0;">
+                    <label class="field-label inline" style="flex: 1;">Záruka (montáž)</label>
+                    <input type="text" id="ponuka-zaruka-montaz" value="36 mesiacov na montáž" style="flex: 2; margin: 0; padding: 10px; font-size: 14px;">
+                </div>
+            </div>
+        </div>
+
+        <div class="card" data-section="podmienky" style="margin-bottom: 25px;">
+            <h3 class="section-label">
+                Doplňujúce texty <span class="section-label-hint">(v PDF sa zobrazia na konci dokumentu)</span>
+            </h3>
+            
+            <label for="ponuka-poznamka-1" class="field-label" style="margin-top: 15px;">Poznámka (nad technickým popisom)</label>
+            <textarea id="ponuka-poznamka-1" rows="2" style="width: 100%; box-sizing: border-box; font-family: inherit; font-size: 15px; margin-bottom: 5px; background-color: var(--input-bg-color); border: 1px solid var(--input-border-color); color: var(--text-color); border-radius: 6px; padding: 12px;"></textarea>
+
+            <div id="obal-informacia-2">
+                <label for="ponuka-informacia-2" class="field-label" style="margin-top: 15px;">Informácia (na konci pred podpisom)</label>
+                <textarea id="ponuka-informacia-2" rows="2" style="width: 100%; box-sizing: border-box; font-family: inherit; font-size: 15px; background-color: var(--input-bg-color); border: 1px solid var(--input-border-color); color: var(--text-color); border-radius: 6px; padding: 12px;"></textarea>
+            </div>
+        </div>
+
+        <div data-section="suhrn" class="suhrn-hint">
+            ✓ Skontroluj všetky údaje vyššie a potom použi tlačidlá v <strong>spodnej lište</strong> na uloženie do archívu alebo stiahnutie PDF.
+        </div>
+
+        <div class="ponuka-action-bar" role="toolbar" aria-label="Akcie ponuky">
+            <button id="ulozit-archiv-btn" class="btn-success btn-ulozit">💾 Uložiť do archívu</button>
+            <button id="btn-stiahnut-pdf" class="btn-secondary">📄 PDF</button>
+            <button id="btn-zdielat-pdf" class="btn-primary">📤 Zdieľať</button>
+        </div>
+    </div>
+
+    <div id="tab-katalog" class="tab-content">
+        <h2>📚 Správa katalógu</h2>
+        <div class="card" id="form-katalog-polozka">
+            <h3 id="katalog-form-nadpis">Pridať do katalógu</h3>
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <button id="btn-typ-polozka" class="btn-primary btn-small" style="flex: 1;">Položka</button>
+                <button id="btn-typ-balik" class="btn-secondary btn-small" style="flex: 1;">Balíček</button>
+            </div>
+            
+            <input type="hidden" id="katalog-uprava-id" value="">
+            <input type="hidden" id="katalog-typ-vstupu" value="polozka">
+            
+            <div id="katalog-sekcia-polozka">
+                <select id="katalog-kategoria">
+                    <option value="material" selected>🟡 Materiál</option>
+                    <option value="zariadenie">🔵 Zariadenie</option>
+                    <option value="praca">🟢 Práca / Služba</option>
+                </select>
+                
+                <div class="flex-row">
+                    <input type="text" id="katalog-nazov" placeholder="Názov položky" style="flex: 3;">
+                    <select id="katalog-mj" style="flex: 1;">
+                        <option value="ks">ks</option>
+                        <option value="m">m</option>
+                        <option value="m2">m²</option>
+                        <option value="m³">m³</option>
+                        <option value="kg">kg</option>
+                        <option value="km">km</option>
+                        <option value="hod">hod</option>
+                        <option value="set">set</option>
+                        <option value="bal">bal</option>
+                        <option value="kpl">kpl</option>
+                    </select>
+                </div>
+                <div class="flex-row">
+                    <input type="number" id="katalog-cena" placeholder="Cena bez DPH (€)" style="flex: 2;">
+                    <input type="number" id="katalog-dph" placeholder="DPH (%)" style="flex: 1;" min="0" max="100">
+                </div>
+
+                <button type="button" id="btn-ukaz-popis" class="btn-secondary btn-small" style="display: none; margin-top: 10px; margin-bottom: 10px;">📝 Pridať technický popis</button>
+            
+                <div id="box-technicky-popis" style="display: none; margin-top: 10px; margin-bottom: 15px; border-left: 3px solid var(--accent-color); padding-left: 10px;">
+                    <label for="katalog-popis" style="font-size: 14px; color: var(--text-muted-color); display: block; margin-bottom: 5px;">Technický popis do PDF (voliteľné):</label>
+                    <textarea id="katalog-popis" rows="4" placeholder="Napr. Klimatizovanie obývačky s kuchyňou bude zabezpečovať klimatizácia značky..." style="width: 100%; padding: 8px; font-size: 14px; background-color: var(--card-bg-color); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; resize: vertical;"></textarea>
+                </div>
+                
+            </div>
+
+            <div id="katalog-sekcia-balik" style="display: none;">
+                <input type="text" id="balik-nazov" placeholder="Názov balíčka (napr. Klimatizácia 3.5kW)" style="font-weight: bold; border-color: var(--accent-color);">
+                <div style="background: var(--input-bg-color); padding: 10px; border: 1px dashed var(--input-border-color); border-radius: 6px; margin-bottom: 10px;">
+                    <label>Obsah balíčka (klikni do názvu pre vyhľadávanie):</label>
+                    <div id="zoznam-poloziek-balika"></div>
+                    <button type="button" id="pridat-do-balika-btn" class="btn-secondary btn-small" style="width: 100%; margin-top: 10px;">+ Pridať riadok do balíčka</button>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button id="zrusit-upravu-btn" class="btn-secondary" style="display: none; flex: 0.5;">Zrušiť</button>
+                <button id="ulozit-do-katalogu-btn" class="btn-primary" style="flex: 1;">Uložiť do katalógu</button>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px; border-left: 4px solid var(--success-btn-bg-color) !important;">
+            <h3 style="margin-top:0; color: var(--success-btn-bg-color) !important; border-left: none; padding-left: 0;">Importovať položky (CSV)</h3>
+            <p style="font-size: 13px; color: var(--text-muted-color); margin-bottom: 10px;">Nahrajte cenník vyexportovaný z Excelu vo formáte .csv (oddelený čiarkou alebo bodkočiarkou).</p>
+            
+            <label for="import-csv-input" class="btn-secondary" style="display: block; text-align: center; margin-bottom: 10px; cursor: pointer; padding: 12px; border-radius: 6px;">
+                Vybrať CSV súbor
+            </label>
+            <input type="file" id="import-csv-input" accept=".csv" style="display: none;">
+
+            <div id="import-mapovanie-box" style="display: none; background: var(--input-bg-color); padding: 15px; border-radius: 6px; border: 1px solid var(--input-border-color); margin-top: 15px;">
+                <h4 style="margin-top:0; margin-bottom: 10px; color: var(--accent-color);">Priraďte stĺpce z vášho súboru:</h4>
+                
+                <div class="flex-row">
+                    <label style="flex: 1;">Názov položky *:</label>
+                    <select id="map-nazov" style="flex: 2; margin-bottom: 0;"></select>
+                </div>
+                <div class="flex-row">
+                    <label style="flex: 1;">Cena bez DPH *:</label>
+                    <select id="map-cena" style="flex: 2; margin-bottom: 0;"></select>
+                </div>
+                <div class="flex-row">
+                    <label style="flex: 1;">Sadzba DPH (%):</label>
+                    <select id="map-dph" style="flex: 2; margin-bottom: 0;">
+                        <option value="">-- Použiť z profilu --</option>
+                    </select>
+                </div>
+                <div class="flex-row">
+                    <label style="flex: 1;">Kategória:</label>
+                    <select id="map-kategoria" style="flex: 2; margin-bottom: 0;">
+                        <option value="">-- Všetko zaradiť ako "Materiál" --</option>
+                    </select>
+                </div>
+                <div class="flex-row">
+                    <label style="flex: 1;">Merná jednotka:</label>
+                    <select id="map-mj" style="flex: 2; margin-bottom: 0;">
+                        <option value="">-- Všetko nastaviť na "ks" --</option>
+                    </select>
+                </div>
+                
+                <button id="spustit-import-btn" class="btn-primary" style="margin-top: 15px;">Spustiť import</button>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Uložené v katalógu</h3>
+            <div class="katalog-toolbar">
+                <div class="katalog-search-wrap" id="katalog-search-wrap">
+                    <input type="text" id="katalog-hladaj" placeholder="🔍 Hľadať položku alebo balíček…" autocomplete="off">
+                    <button type="button" id="katalog-hladaj-clear" title="Vyčistiť hľadanie" aria-label="Vyčistiť hľadanie">✕</button>
+                </div>
+                <div class="katalog-ovladace">
+                    <div class="katalog-filter" id="katalog-filter" role="tablist" aria-label="Filter typu">
+                        <button type="button" class="katalog-pill aktivny" data-filter="vsetky">Všetky</button>
+                        <button type="button" class="katalog-pill" data-filter="material">🟡 Materiál</button>
+                        <button type="button" class="katalog-pill" data-filter="zariadenie">🔵 Zariadenie</button>
+                        <button type="button" class="katalog-pill" data-filter="praca">🟢 Práca</button>
+                        <button type="button" class="katalog-pill" data-filter="balik">🟣 Balíčky</button>
+                        <button type="button" class="katalog-pill" data-filter="napoplnenie">⚠️ Na doplnenie</button>
+                    </div>
+                    <select id="katalog-triedit" class="katalog-triedit" aria-label="Triedenie">
+                        <option value="nazov-asc">🔤 Názov (A → Z)</option>
+                        <option value="nazov-desc">🔤 Názov (Z → A)</option>
+                        <option value="cena-desc">💰 Cena (najvyššia)</option>
+                        <option value="cena-asc">💰 Cena (najnižšia)</option>
+                    </select>
+                </div>
+                <div class="katalog-statistiky" id="katalog-statistiky"></div>
+            </div>
+            <div id="zoznam-v-katalogu"></div>
+        </div>
+    </div>
+
+    <div id="tab-archiv" class="tab-content">
+        <h2>📁 Archív ponúk</h2>
+        <div class="card">
+            <div class="archiv-toolbar">
+                <div class="archiv-search-wrap" id="archiv-search-wrap">
+                    <input type="text" id="archiv-hladaj" placeholder="🔍 Hľadať podľa čísla, mena alebo dátumu…" autocomplete="off">
+                    <button type="button" id="archiv-hladaj-clear" title="Vyčistiť hľadanie" aria-label="Vyčistiť hľadanie">✕</button>
+                </div>
+                <div class="archiv-ovladace">
+                    <div class="archiv-filter" id="archiv-filter" role="tablist" aria-label="Filter stavu">
+                        <button type="button" class="archiv-pill aktivny" data-filter="vsetky">Všetky</button>
+                        <button type="button" class="archiv-pill" data-filter="bezsupisu">📝 Bez súpisu</button>
+                        <button type="button" class="archiv-pill" data-filter="sosupisom">✓ So súpisom</button>
+                    </div>
+                    <select id="archiv-triedit" class="archiv-triedit" aria-label="Triedenie">
+                        <option value="najnovsie">↓ Najnovšie</option>
+                        <option value="najstarsie">↑ Najstaršie</option>
+                        <option value="suma-desc">💰 Suma (najvyššia)</option>
+                        <option value="suma-asc">💰 Suma (najnižšia)</option>
+                        <option value="meno-asc">🔤 Meno (A → Z)</option>
+                    </select>
+                </div>
+                <div class="archiv-statistiky" id="archiv-statistiky"></div>
+            </div>
+            <div id="zoznam-archivu"></div>
+        </div>
+    </div>
+
+    <div id="tab-nastavenia" class="tab-content">
+        <h2>⚙️ Nastavenia</h2>
+
+        <style>
+            #theme-toggle:checked + span { background-color: #0056b3; }
+            #theme-toggle:checked + span span { transform: translateX(20px); }
+            #ponuka-dph-toggle:checked + span { background-color: var(--success-btn-bg-color); }
+            #ponuka-dph-toggle:checked + span span { transform: translateX(20px); }
+        </style>
+
+        <div class="settings-accordion">
+
+            <!-- 1. FIRMA A KONTAKT -->
+            <div class="acc-item open" data-acc>
+                <div class="acc-head">
+                    <div class="acc-icon">🏢</div>
+                    <div class="acc-label">
+                        <div class="acc-name">Firma a kontakt</div>
+                        <div class="acc-sub">Názov, adresa, IČO/DIČ, telefón</div>
+                    </div>
+                    <div class="acc-arrow">›</div>
+                </div>
+                <div class="acc-body">
+                    <input type="text" id="moja-firma" placeholder="Názov firmy / Tvoje meno">
+                    <input type="text" id="moja-ulica" placeholder="Ulica a číslo">
+                    <input type="text" id="moje-mesto" placeholder="PSČ a Mesto">
+                    <div class="flex-row">
+                        <input type="text" id="moje-ico" placeholder="IČO" style="flex: 1;">
+                        <input type="text" id="moje-dic" placeholder="DIČ" style="flex: 1;">
+                    </div>
+
+                    <label style="display: flex; align-items: center; gap: 10px; font-weight: normal; margin: 15px 0; text-transform: none; font-size: 14px; color: var(--text-color);">
+                        <input type="checkbox" id="som-platca-dph" style="width: 20px; height: 20px;"> Som platca DPH
+                    </label>
+                    <input type="text" id="moje-ic-dph" placeholder="IČ DPH" style="display: none;">
+                    <input type="number" id="profil-sadzba-dph" placeholder="Základná sadzba DPH (napr. 23) %" style="display: none;" min="0" max="100">
+
+                    <input type="text" id="profil-kontaktna-osoba" placeholder="Kontaktná osoba (napr. Vybavuje: Ján Mrkvička)" style="margin-top: 10px;">
+                    <input type="text" id="moj-telefon" placeholder="Kontaktný telefón">
+                    <input type="email" id="moj-email" placeholder="E-mail">
+                    <input type="text" id="profil-miesto-vystavenia" placeholder="Miesto vystavenia (napr. Bratislava)" style="margin-top: 10px;">
+
+                    <textarea id="profil-zapis-register" rows="2" placeholder="Zápis v registri (napr. spoločnosť zapísaná v Obchodnom registri...)" style="margin-top: 10px; width: 100%; padding: 12px; border: 1px solid var(--input-border-color); border-radius: 6px; font-family: inherit; background: var(--input-bg-color); color: var(--text-color); box-sizing: border-box;"></textarea>
+                </div>
+            </div>
+
+            <!-- 2. LOGO A PODPIS -->
+            <div class="acc-item" data-acc>
+                <div class="acc-head">
+                    <div class="acc-icon">🖼️</div>
+                    <div class="acc-label">
+                        <div class="acc-name">Logo a podpis</div>
+                        <div class="acc-sub">Hlavička PDF · podpis na konci dokumentu</div>
+                    </div>
+                    <div class="acc-arrow">›</div>
+                </div>
+                <div class="acc-body">
+                    <label>Logo firmy (zobrazí sa v PDF):</label>
+                    <input type="file" id="nahrat-logo" accept="image/png, image/jpeg" style="margin-bottom: 10px; padding: 5px; font-size: 14px;">
+                    <div id="logo-nahlad-box" style="display: none; align-items: flex-end; gap: 10px; margin-bottom: 10px;">
+                        <img id="logo-preview" src="" style="max-height: 50px; border: 1px solid #ccc; border-radius: 4px; padding: 2px; background: white;">
+                        <button type="button" id="zmazat-logo-btn" class="btn-danger btn-small">Odstrániť logo</button>
+                    </div>
+                    <p class="settings-section-hint">Odporúčaný formát: PNG bez pozadia alebo JPG.</p>
+
+                    <hr style="border: none; border-top: 1px dashed var(--border-color); margin: 16px 0;">
+
+                    <label for="profil-text-podpisu">Text pod čiarou na podpis</label>
+                    <input type="text" id="profil-text-podpisu" placeholder="Napr. Pečiatka a podpis, alebo Meno a Priezvisko...">
+
+                    <label>Naskenovaný podpis (zobrazí sa na konci PDF):</label>
+                    <input type="file" id="nahrat-podpis" accept="image/png, image/jpeg" style="margin-bottom: 10px; padding: 5px; font-size: 14px;">
+                    <div id="podpis-nahlad-box" style="display: none; align-items: flex-end; gap: 10px; margin-bottom: 10px;">
+                        <img id="podpis-preview" src="" style="max-height: 60px; border: 1px solid #ccc; border-radius: 4px; padding: 2px; background: white;">
+                        <button type="button" id="zmazat-podpis-btn" class="btn-danger btn-small">Odstrániť podpis</button>
+                    </div>
+                    <p class="settings-section-hint">Odporúčanie: Nahrajte fotku podpisu na čistom bielom pozadí, orezanú tesne okolo textu (úzky obdĺžnik).</p>
+                </div>
+            </div>
+
+            <!-- 3. LOGÁ ZNAČIEK -->
+            <div class="acc-item" data-acc>
+                <div class="acc-head">
+                    <div class="acc-icon">🏷️</div>
+                    <div class="acc-label">
+                        <div class="acc-name">Logá značiek (Výrobcovia)</div>
+                        <div class="acc-sub">Daikin, MDV, Mitsubishi… pre hlavičku PDF</div>
+                    </div>
+                    <div class="acc-arrow">›</div>
+                </div>
+                <div class="acc-body">
+                    <p class="settings-section-hint">Pridajte si logá značiek, ktoré sa dajú vybrať pri tvorbe ponuky a zobrazia sa v hlavičke PDF.</p>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: flex-start; flex-wrap: wrap;">
+                        <input type="text" id="nova-znacka-nazov" placeholder="Názov (napr. MDV)" style="flex: 1; min-width: 150px; padding: 10px; font-size: 14px; margin-bottom: 0;">
+                        <input type="file" id="nova-znacka-logo" accept="image/png, image/jpeg" style="flex: 1.5; min-width: 200px; padding: 8px; font-size: 14px;">
+                        <button type="button" id="pridat-znacku-btn" class="btn-primary btn-small" style="padding: 10px 15px;">Pridať značku</button>
+                    </div>
+
+                    <div id="zoznam-znaciek" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                </div>
+            </div>
+
+            <!-- 4. ČÍSLOVANIE A PREDVOLENÉ TEXTY -->
+            <div class="acc-item" data-acc>
+                <div class="acc-head">
+                    <div class="acc-icon">📄</div>
+                    <div class="acc-label">
+                        <div class="acc-name">Číslovanie a predvolené texty</div>
+                        <div class="acc-sub">Formát čísla ponuky · poznámky do PDF</div>
+                    </div>
+                    <div class="acc-arrow">›</div>
+                </div>
+                <div class="acc-body">
+                    <div style="display: flex; gap: 10px; margin-bottom: 5px;">
+                        <div style="flex: 2;">
+                            <label for="profil-sablona-cisla">Formát číslovania:</label>
+                            <input type="text" id="profil-sablona-cisla" placeholder="Napr. CP-{ROK}-{CISLO}">
+                        </div>
+                        <div style="flex: 1;">
+                            <label for="profil-pocitadlo">Nasledujúce číslo:</label>
+                            <input type="number" id="profil-pocitadlo" min="1" placeholder="Napr. 1">
+                        </div>
+                    </div>
+                    <p class="settings-section-hint">Použi <b>{ROK}</b> pre aktuálny rok a <b>{CISLO}</b> pre poradové číslo. Ak začínaš uprostred roka, prepíš si nasledujúce číslo.</p>
+
+                    <hr style="border: none; border-top: 1px dashed var(--border-color); margin: 16px 0;">
+
+                    <label for="profil-supis-nadpis">Predvolený nadpis súpisu prác</label>
+                    <input type="text" id="profil-supis-nadpis" placeholder="SÚPIS PRÁC" maxlength="60">
+                    <p class="settings-section-hint">Hlavný nadpis dokumentu súpisu (veľké modré písmo v PDF). Napr. „SÚPIS PRÁC A DODÁVOK". Pri každom súpise sa dá zmeniť.</p>
+
+                    <label for="profil-supis-vazba">Predvolená väzba súpisu prác</label>
+                    <select id="profil-supis-vazba">
+                        <option value="cp">Súpis prác k cenovej ponuke č.</option>
+                        <option value="zakazka">Súpis prác k zákazke č.</option>
+                        <option value="faktura">Súpis prác k faktúre č.</option>
+                        <option value="ine">Vlastný text…</option>
+                    </select>
+                    <input type="text" id="profil-supis-vazba-custom" placeholder="Napr. Súpis prác k objednávke č." style="display: none; margin-top: 8px;">
+                    <p class="settings-section-hint">Určuje, na čo sa štandardne viaže súpis prác (v hlavičke PDF). Pri každom súpise sa dá zmeniť.</p>
+
+                    <label for="profil-supis-podpis-rezim">Predvolená podpisová časť súpisu</label>
+                    <select id="profil-supis-podpis-rezim">
+                        <option value="ciary">Čiary „Odovzdal / Prevzal"</option>
+                        <option value="podpis">Podpis dodávateľa (ako v ponuke)</option>
+                        <option value="nic">Nič (bez podpisovej časti)</option>
+                    </select>
+                    <p class="settings-section-hint">Spodná časť dokumentu súpisu. Nové súpisy ju zdedia; pri každom súpise sa dá zmeniť.</p>
+
+                    <label for="profil-poznamka-1">Predvolená poznámka (nad technickým popisom)</label>
+                    <textarea id="profil-poznamka-1" rows="2" placeholder="napr. Cenová ponuka bola spracovaná na základe obhliadky..." style="width: 100%; padding: 12px; border: 1px solid var(--input-border-color); border-radius: 6px; font-family: inherit; margin-bottom: 10px; background: var(--input-bg-color); color: var(--text-color); box-sizing: border-box;"></textarea>
+
+                    <label for="profil-informacia-2">Predvolená informácia (na konci pred podpisom)</label>
+                    <textarea id="profil-informacia-2" rows="2" placeholder="napr. Nepredvídané dodávky a montážne práce budú účtované..." style="width: 100%; padding: 12px; border: 1px solid var(--input-border-color); border-radius: 6px; font-family: inherit; background: var(--input-bg-color); color: var(--text-color); box-sizing: border-box;"></textarea>
+                </div>
+            </div>
+
+            <!-- 5. VZHĽAD -->
+            <div class="acc-item" data-acc>
+                <div class="acc-head">
+                    <div class="acc-icon">🎨</div>
+                    <div class="acc-label">
+                        <div class="acc-name">Vzhľad aplikácie</div>
+                        <div class="acc-sub">Tmavý / svetlý režim</div>
+                    </div>
+                    <div class="acc-arrow">›</div>
+                </div>
+                <div class="acc-body">
+                    <label style="display: flex; align-items: center; justify-content: space-between; font-weight: normal; margin: 0; text-transform: none; font-size: 15px; color: var(--text-color);">
+                        <span>Svetlý režim</span>
+                        <label for="theme-toggle" style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="theme-toggle" style="display: none;">
+                            <span style="position: relative; width: 44px; height: 24px; background-color: #374151; border-radius: 9999px; transition: background-color 0.2s;">
+                                <span style="position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background-color: white; border-radius: 9999px; transition: transform 0.2s;"></span>
+                            </span>
+                        </label>
+                    </label>
+                </div>
+            </div>
+
+            <!-- 6. CLOUD ZÁLOHA (GOOGLE DRIVE) -->
+            <div class="acc-item" data-acc>
+                <div class="acc-head">
+                    <div class="acc-icon">☁️</div>
+                    <div class="acc-label">
+                        <div class="acc-name">Cloud záloha (Google Drive)</div>
+                        <div class="acc-sub" id="drive-acc-sub">Prihlás sa pre automatickú zálohu dát</div>
+                    </div>
+                    <div class="acc-arrow">›</div>
+                </div>
+                <div class="acc-body">
+                    <!-- Stav: NEPRIHLÁSENÝ -->
+                    <div id="drive-not-logged-in">
+                        <p class="settings-section-hint" style="margin-bottom: 12px;">
+                            Po prihlásení do svojho Google účtu bude môcť aplikácia ukladať zálohy
+                            do tvojho Google Drive (do priečinka <strong>EasyCena_zalohy</strong>).
+                        </p>
+                        <p class="settings-section-hint" style="margin-bottom: 12px;">
+                            🔒 Aplikácia má prístup <strong>iba</strong> k súborom, ktoré sama vytvorila —
+                            nevidí žiadne iné tvoje súbory v Drive. Tvoje dáta zostávajú u teba,
+                            prevádzkovateľ aplikácie k nim nemá prístup.
+                        </p>
+                        <button id="drive-login-btn" class="btn-primary" style="width: 100%; padding: 12px; font-size: 15px;">🔐 Prihlásiť sa do Google Drive</button>
+                    </div>
+                    <!-- Stav: PRIHLÁSENÝ -->
+                    <div id="drive-logged-in" style="display: none;">
+                        <div class="settings-section-hint" style="margin-bottom: 4px;">Prihlásený ako:</div>
+                        <div style="font-weight: bold; color: var(--accent-color); margin-bottom: 14px; word-break: break-all;" id="drive-user-email">…</div>
+
+                        <label for="device-label-input" class="field-label">Názov tohto zariadenia</label>
+                        <input type="text" id="device-label-input" placeholder="Napr. PC v dielni, Tablet na stavbe" maxlength="40" style="margin-bottom: 14px;" autocomplete="off">
+
+                        <button id="drive-backup-btn" class="btn-success" style="width: 100%; padding: 12px; font-size: 15px; margin-bottom: 8px;">📤 Zálohovať teraz</button>
+                        <div id="drive-backup-status" class="settings-section-hint" style="margin-bottom: 12px; text-align: center;">Posledná záloha: nikdy</div>
+
+                        <button id="drive-restore-btn" class="btn-secondary" style="width: 100%; padding: 12px; font-size: 15px; margin-bottom: 16px;">📥 Obnoviť zo zálohy…</button>
+
+                        <button id="drive-logout-btn" class="btn-secondary" style="width: 100%; padding: 12px; font-size: 15px;">Odhlásiť sa</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 7. LOKÁLNA ZÁLOHA A DÁTA -->
+            <div class="acc-item" data-acc>
+                <div class="acc-head">
+                    <div class="acc-icon">💾</div>
+                    <div class="acc-label">
+                        <div class="acc-name">Lokálna záloha (JSON súbor)</div>
+                        <div class="acc-sub">Export do JSON · import zo súboru</div>
+                    </div>
+                    <div class="acc-arrow">›</div>
+                </div>
+                <div class="acc-body">
+                    <button onclick="inteligentnaZaloha()" class="btn-primary" style="width: 100%; padding: 12px; font-size: 15px; margin-bottom: 10px;">💾 Exportovať zálohu</button>
+                    <label for="import-zalohy" class="btn-secondary" style="width: 100%; padding: 12px; font-size: 15px; text-align: center; cursor: pointer; box-sizing: border-box; display: inline-block; margin: 0; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold; border-radius: 6px;">📂 Obnoviť zo zálohy</label>
+                    <input type="file" id="import-zalohy" accept=".json" style="display: none;" onchange="obnovitZalohu(event)">
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Číslo verzie — text dopĺňa app.js (konštanta VERZIA_APPKY) -->
+        <div id="verzia-appky" class="settings-section-hint" style="text-align: center;"></div>
+
+        <!-- STICKY SAVE BAR — viditeľný iba v kontexte Nastavení -->
+        <div class="settings-sticky-save">
+            <span class="settings-save-status" id="settings-save-status"></span>
+            <button id="ulozit-profil-btn" class="btn-primary">💾 Uložiť zmeny</button>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <div class="bottom-nav">
+        <div class="nav-item active" onclick="prepniTab('tab-ponuka', this)"><span>📝</span><span>Ponuka</span></div>
+        <div class="nav-item" onclick="prepniTab('tab-katalog', this)"><span>📚</span><span>Katalóg</span></div>
+        <div class="nav-item" onclick="prepniTab('tab-archiv', this)"><span>📁</span><span>Archív</span></div>
+        <div class="nav-item" onclick="prepniTab('tab-nastavenia', this)"><span>⚙️</span><span>Nastavenia</span></div>
+    </div>
+
+    <script src="logo-firmy.js"></script>
+    <script src="app.js"></script>
+    <script>
+        function prepniTab(tabId, element) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            element.classList.add('active');
+            window.scrollTo(0, 0); 
+        }
+
+        // ========== ACCORDION NASTAVENIA ==========
+        document.addEventListener('DOMContentLoaded', function() {
+            // Accordion toggle
+            document.querySelectorAll('.acc-item[data-acc] .acc-head').forEach(head => {
+                head.addEventListener('click', function() {
+                    const item = head.parentElement;
+                    const wasOpen = item.classList.contains('open');
+                    // Zatvorí všetky, otvorí iba kliknutú (klasické accordion správanie)
+                    document.querySelectorAll('.acc-item[data-acc]').forEach(i => i.classList.remove('open'));
+                    if (!wasOpen) item.classList.add('open');
+                });
+            });
+
+            // Dirty state indicator - zobrazí "● neuložené" keď používateľ upraví akékoľvek pole
+            const statusEl = document.getElementById('settings-save-status');
+            const tabNastavenia = document.getElementById('tab-nastavenia');
+            let dirty = false;
+
+            function markDirty() {
+                if (dirty) return;
+                dirty = true;
+                statusEl.textContent = '● neuložené';
+                statusEl.className = 'settings-save-status dirty';
+            }
+            function markSaved() {
+                dirty = false;
+                statusEl.textContent = '✓ uložené';
+                statusEl.className = 'settings-save-status saved';
+                setTimeout(() => { if (!dirty) { statusEl.textContent = ''; statusEl.className = 'settings-save-status'; } }, 2500);
+            }
+
+            // Sleduje zmeny vo všetkých inputoch/textarea/checkboxoch v Nastaveniach
+            tabNastavenia.addEventListener('input', markDirty);
+            tabNastavenia.addEventListener('change', markDirty);
+
+            // Keď používateľ klikne Uložiť zmeny, aktivuje sa markSaved po tom čo app.js urobí svoju prácu
+            const saveBtn = document.getElementById('ulozit-profil-btn');
+            if (saveBtn) {
+                saveBtn.addEventListener('click', function() {
+                    // Krátke oneskorenie aby sa najprv vykonala uložovacia logika v app.js
+                    setTimeout(markSaved, 100);
+                });
+            }
+
+            // ========== PROGRESS BAR TABU PONUKA ==========
+            (function () {
+                const progressBar = document.getElementById('ponuka-progress');
+                if (!progressBar) return;
+                const kroky = Array.from(progressBar.querySelectorAll('.pp-step'));
+                const linie = Array.from(progressBar.querySelectorAll('.pp-line'));
+                const sekcie = document.querySelectorAll('#tab-ponuka [data-section]');
+                const poradie = ['klient', 'polozky', 'podmienky', 'suhrn'];
+
+                function oznacAktivny(sekcia) {
+                    const idx = poradie.indexOf(sekcia);
+                    if (idx < 0) return;
+                    kroky.forEach((k, i) => {
+                        k.classList.toggle('active', i === idx);
+                        k.classList.toggle('done', i < idx);
+                    });
+                    linie.forEach((l, i) => {
+                        l.classList.toggle('done', i < idx);
+                    });
+                }
+
+                function scrollujNaSekciu(cielSekcia) {
+                    const prvaSekcia = document.querySelector(`#tab-ponuka [data-section="${cielSekcia}"]`);
+                    if (!prvaSekcia) return;
+                    const offset = prvaSekcia.getBoundingClientRect().top + window.scrollY - (progressBar.offsetHeight + 8);
+                    window.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
+                }
+
+                // Klik + klávesnica (Enter / Space) na kroky
+                kroky.forEach(krok => {
+                    krok.addEventListener('click', () => scrollujNaSekciu(krok.dataset.step));
+                    krok.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            scrollujNaSekciu(krok.dataset.step);
+                        }
+                    });
+                });
+
+                // IntersectionObserver: sekcia v strede viewportu = aktívny krok
+                const observer = new IntersectionObserver((entries) => {
+                    // Ak je tab-ponuka neaktívny, ignoruj (IO stále môže reportovať staré stavy)
+                    if (!document.getElementById('tab-ponuka').classList.contains('active')) return;
+                    // Keď sme na spodku stránky, fallback nižšie si vynúti "suhrn" — preskoč IO
+                    if (jeBlizkoSpodku()) return;
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            oznacAktivny(entry.target.dataset.section);
+                        }
+                    });
+                }, { rootMargin: '-45% 0px -50% 0px', threshold: 0 });
+
+                sekcie.forEach(s => observer.observe(s));
+
+                // Fallback: keď je scroll blízko spodku stránky, posledný krok "suhrn"
+                // je príliš krátky na to, aby sa dostal do stredného pásma IO.
+                function jeBlizkoSpodku() {
+                    const scrollBottom = window.scrollY + window.innerHeight;
+                    const docHeight = document.documentElement.scrollHeight;
+                    return scrollBottom >= docHeight - 80;
+                }
+                window.addEventListener('scroll', () => {
+                    if (!document.getElementById('tab-ponuka').classList.contains('active')) return;
+                    if (jeBlizkoSpodku()) oznacAktivny('suhrn');
+                }, { passive: true });
+            })();
+        });
+    </script>
+</body>
+</html>
