@@ -6,7 +6,7 @@ if ('serviceWorker' in navigator) {
 // Verzia aplikácie — zobrazuje sa na konci Nastavení, aby bolo na každom
 // zariadení vidieť, či už beží nová verzia. Pri každom nasadení ju zvýš.
 // Zámerne hneď na začiatku súboru: vypíše sa aj vtedy, keby zvyšok zlyhal.
-const VERZIA_APPKY = '2026-11-09.1';
+const VERZIA_APPKY = '2026-11-09.2';
 
 // Testovacia verzia = tá istá appka nasadená na inej adrese (testovací
 // repozitár, lokálna kópia). Spozná sa podľa adresy: všetko okrem ostrej
@@ -3513,14 +3513,22 @@ function handleDriveAuthResponse(response) {
             localStorage.setItem('easycena_drive_email', driveUserEmail);
         }
         aktualizujDriveUI();
-        // Po prihlásení skús pull-on-open (ak ešte nebol)
-        if (typeof _skusPullOnOpen === 'function') _skusPullOnOpen();
+        _poPrihlaseniSynchronizuj();
     })
     .catch(err => {
         console.warn('Drive userinfo fetch failed:', err);
         aktualizujDriveUI();
-        if (typeof _skusPullOnOpen === 'function') _skusPullOnOpen();
+        _poPrihlaseniSynchronizuj();
     });
+}
+
+// Po prihlásení: pri prvom prihlásení v relácii pull-on-open. Ak už prebehol
+// (opätovné prihlásenie po vypršaní počas práce), odoslať čakajúce zmeny —
+// inak by ostali čakať až do ďalšej zmeny alebo otvorenia appky.
+function _poPrihlaseniSynchronizuj() {
+    const pullUzBezal = _pullOnOpenSpustenyRaz;
+    if (typeof _skusPullOnOpen === 'function') _skusPullOnOpen();
+    if (pullUzBezal && typeof _lokalCakaNaZalohu === 'function' && _lokalCakaNaZalohu()) _spustiAutoPush();
 }
 
 // Tlačidlo "Prihlásiť sa do Google Drive"
@@ -3606,27 +3614,58 @@ async function driveZalohuj() {
         alert('Nie si prihlásený do Google Drive.');
         return;
     }
+    // Kým beží automatická záloha (napr. hneď po otvorení appky), druhé
+    // nahrávanie by videlo jej súbor ako "cudziu novšiu zálohu" a ukázalo
+    // falošný konflikt so sebou samým.
+    if (_autopushBezi) {
+        if (typeof ukazToast === 'function') ukazToast('☁️ Záloha práve prebieha, chvíľu počkaj…', 'info');
+        return;
+    }
+    _autopushBezi = true;
     const btn = document.getElementById('drive-backup-btn');
     const statusEl = document.getElementById('drive-backup-status');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Zálohujem…'; }
     if (statusEl) statusEl.textContent = 'Kontrolujem cloud…';
     aktualizujCloudStatus('pushing');
 
+    // Pre prípad zlyhania: ak lokál pred pokusom nečakal na zálohu, vrátime
+    // značku _sync späť (inak by zariadenie vyzeralo, že má neodoslané zmeny).
+    let predoslaZnacka;
+    let znackaPosunuta = false;
+    let lokalCakalPred = false;
     try {
+        lokalCakalPred = _maxModifiedAt((_nacitajMeta() || {}).modifiedAt) > _nacitajLastSync();
+
         // 0. Pull-pred-push — zmenil sa cloud od posledného sync-u? Ak áno,
         // otvor konflikt dialog namiesto slepého prepísania.
         const najnovsi = await _driveNajdiNajnovsiSubor();
+
+        // Nie je čo zálohovať: najnovší súbor v Drive je ten, s ktorým sme
+        // zosynchronizovaní, a lokálne nič nečaká → nevytvárame rovnaký súbor.
+        const ls = _nacitajLastSyncSubor();
+        if (najnovsi && ls && ls.id === najnovsi.id && !lokalCakalPred) {
+            if (btn) { btn.disabled = false; btn.textContent = '📤 Zálohovať teraz'; }
+            if (statusEl) statusEl.textContent = '✅ Všetko je už zálohované';
+            aktualizujCloudStatus('ok');
+            if (typeof ukazToast === 'function') ukazToast('☁️ Všetko je už zálohované', 'success');
+            return;
+        }
+
+        let cloudMax = 0;
         if (najnovsi) {
             const cloudData = await _driveStiahniSubor(najnovsi.id);
             if (cloudData && cloudData._meta) {
-                const cmp = _porovnajMeta(cloudData);
+                const cmp = _porovnajMeta(cloudData, najnovsi);
+                cloudMax = cmp.cloudMax;
                 if (cmp.cloudZmenaOdSync) {
                     if (btn) { btn.disabled = false; btn.textContent = '📤 Zálohovať teraz'; }
                     if (statusEl) statusEl.textContent = 'V Drive sú novšie zmeny — vyber akciu v dialógu';
                     aktualizujCloudStatus('pending');
-                    _zobrazKonfliktDialog(cloudData);
+                    _zobrazKonfliktDialog(cloudData, najnovsi);
                     return;
                 }
+                // Prvá synchronizácia: najprv bezstratovo zlúčiť, potom nahrať výsledok.
+                if (cmp.prvaSynchronizacia) _tichoZlucSCloudom(cloudData, najnovsi);
             }
         }
         if (statusEl) statusEl.textContent = 'Prebieha upload do Google Drive…';
@@ -3634,22 +3673,28 @@ async function driveZalohuj() {
         // 1. Nájdi alebo vytvor priečinok EasyCena_zalohy
         const folderId = await _driveZistiPriecinokId();
 
-        // 2. Priprav JSON dáta z localStorage (existujúca funkcia)
+        // 2. Značka _sync — nová záloha bude pre ostatné zariadenia rozpoznateľne novšia
+        predoslaZnacka = _posunSyncZnacku(cloudMax);
+        znackaPosunuta = true;
+
+        // 3. Priprav JSON dáta z localStorage (existujúca funkcia)
         const dataJson = vytvorDataZalohy();
 
-        // 3. Vytvor názov súboru s timestampom: easycena_zaloha_2026-04-28_20-42.json
+        // 4. Vytvor názov súboru s timestampom: easycena_zaloha_2026-04-28_20-42.json
         const ts = new Date();
         const pad = (n) => String(n).padStart(2, '0');
         const filename = `easycena_zaloha_${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}_${pad(ts.getHours())}-${pad(ts.getMinutes())}.json`;
 
-        // 4. Upload
+        // 5. Upload
         const localMaxPredPush = _maxModifiedAt((_nacitajMeta() || {}).modifiedAt);
-        await _driveUploadJsonSubor(folderId, filename, dataJson);
+        const nahrany = await _driveUploadJsonSubor(folderId, filename, dataJson);
+        znackaPosunuta = false;
 
-        // 5. Ulož timestamp poslednej zálohy a sync timestamp pre konflikt detekciu
+        // 6. Ulož timestamp poslednej zálohy, sync timestamp a identitu nahratého súboru
         const teraz = Date.now();
         localStorage.setItem('easycena_drive_last_backup', String(teraz));
         _ulozLastSync(localMaxPredPush);
+        _ulozLastSyncSubor(nahrany);
 
         if (btn) { btn.disabled = false; btn.textContent = '📤 Zálohovať teraz'; }
         aktualizujDriveZalohaStatus();
@@ -3660,6 +3705,7 @@ async function driveZalohuj() {
         _driveVycistiStareZalohy();
     } catch (err) {
         console.error('Drive zaloha failed:', err);
+        if (znackaPosunuta && !lokalCakalPred) _vratSyncZnacku(predoslaZnacka);
         if (btn) { btn.disabled = false; btn.textContent = '📤 Zálohovať teraz'; }
         if (statusEl) statusEl.textContent = '❌ Chyba: ' + (err.message || 'záloha zlyhala');
         aktualizujCloudStatus('error');
@@ -3669,6 +3715,8 @@ async function driveZalohuj() {
                 driveLogin();
             }
         }
+    } finally {
+        _autopushBezi = false;
     }
 }
 
@@ -3782,7 +3830,9 @@ async function _driveUploadJsonSubor(folderId, filename, dataJson) {
         dataJson +
         closeDelim;
 
-    const resp = await fetch(`${DRIVE_UPLOAD_BASE}/files?uploadType=multipart&fields=id,name`, {
+    // createdTime = čas vytvorenia podľa hodín Googlu — slúži na rozpoznanie,
+    // či je súbor v Drive novší než ten, s ktorým sme naposledy synchronizovali.
+    const resp = await fetch(`${DRIVE_UPLOAD_BASE}/files?uploadType=multipart&fields=id,name,createdTime`, {
         method: 'POST',
         headers: {
             Authorization: 'Bearer ' + driveAccessToken,
@@ -3842,9 +3892,12 @@ document.addEventListener('DOMContentLoaded', () => {
 // SYNC META — modifiedAt timestampy pre katalog/profil/archiv
 // =====================================================
 // easycena_meta = {
-//   modifiedAt: { katalog: ms, profil: ms, archiv: ms },
+//   modifiedAt: { katalog: ms, profil: ms, archiv: ms, _sync: ms },
 //   deviceLabel: '...'   // duplikát z easycena_device_label, pre zálohu
 // }
+// _sync nie je typ dát: je to poradová značka poslednej nahratej zálohy.
+// Vďaka nej je každá nová záloha pre ostatné zariadenia rozpoznateľne
+// novšia (aj staré verzie appky, lebo berú maximum zo všetkých hodnôt).
 function _nacitajMeta() {
     try {
         return JSON.parse(localStorage.getItem('easycena_meta')) || { modifiedAt: {} };
@@ -3859,7 +3912,10 @@ function _ulozMeta(meta) {
 function oznacZmeneny(typ) {
     const meta = _nacitajMeta();
     if (!meta.modifiedAt) meta.modifiedAt = {};
-    meta.modifiedAt[typ] = Date.now();
+    // Značka zmeny musí byť vždy väčšia než posledná synchronizácia — aj keď
+    // hodiny tohto zariadenia meškajú. Inak by sa zmena netvárila ako zmena
+    // a pri ďalšom otvorení by ju tiché stiahnutie z Drive prepísalo.
+    meta.modifiedAt[typ] = Math.max(Date.now(), _nacitajLastSync() + 1, _maxModifiedAt(meta.modifiedAt) + 1);
     _ulozMeta(meta);
     // Auto-push: ak je užívateľ prihlásený do Drive, naplánuj synchronizáciu
     if (typeof _naplanujAutoPush === 'function') _naplanujAutoPush();
@@ -3872,6 +3928,8 @@ function oznacZmeneny(typ) {
 function aktualizujCloudStatus(stav) {
     const el = document.getElementById('cloud-status');
     if (!el) return;
+    // Fajka "synchronizované" len vtedy, keď naozaj nič nečaká na zálohu.
+    if (stav === 'ok' && typeof _lokalCakaNaZalohu === 'function' && _lokalCakaNaZalohu()) stav = 'pending';
     el.classList.remove('ok', 'pending', 'busy', 'error', 'expired', 'logged-out');
     if (stav === 'expired') {
         el.textContent = '🔒 Nesync.';
@@ -3887,7 +3945,7 @@ function aktualizujCloudStatus(stav) {
         el.classList.add('busy');
     } else if (stav === 'pending') {
         el.textContent = '☁️ ⏳';
-        el.title = 'Auto-záloha sa pripravuje (do 10 min). Klikni pre Nastavenia.';
+        el.title = 'Zmeny čakajú na zálohu do Drive. Klikni pre Nastavenia.';
         el.classList.add('pending');
     } else if (stav === 'error') {
         el.textContent = '☁️ ⚠️';
@@ -4055,7 +4113,7 @@ async function driveZobrazZoznamZaloh() {
         // 3. Listing — zoradené najnovšie hore
         const q = `'${folderId}' in parents and trashed=false and mimeType='application/json'`;
         const fields = 'files(id,name,modifiedTime,description,size)';
-        const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent(fields)}&orderBy=modifiedTime desc&pageSize=100`;
+        const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent(fields)}&orderBy=modifiedTime desc&pageSize=300`;
         const resp = await fetch(url, {
             headers: { Authorization: 'Bearer ' + driveAccessToken }
         });
@@ -4178,6 +4236,94 @@ function _ulozLastSync(ms) {
     localStorage.setItem('easycena_last_sync_ms', String(ms || 0));
 }
 
+// Identita súboru v Drive, s ktorým sa toto zariadenie naposledy zosynchronizovalo
+// (nahralo ho alebo stiahlo): { id, t: createdTime v ms podľa Googlu, f: id priečinka }.
+// Samotné porovnanie časov nestačí: po vyriešení konfliktu na inom zariadení
+// nemusí mať nová záloha vyššie maximum značiek, než je tu lastSync (SYNC-1).
+// Vráti null, ak záznam chýba, je poškodený alebo patrí inému priečinku/účtu.
+function _nacitajLastSyncSubor() {
+    try {
+        const z = JSON.parse(localStorage.getItem('easycena_last_sync_file'));
+        if (!z || !z.id) return null;
+        if (z.f !== localStorage.getItem('easycena_drive_folder_id')) return null;
+        return z;
+    } catch (e) {
+        return null;
+    }
+}
+function _ulozLastSyncSubor(subor) {
+    if (!subor || !subor.id) return;
+    try {
+        localStorage.setItem('easycena_last_sync_file', JSON.stringify({
+            id: subor.id,
+            t: Date.parse(subor.createdTime || '') || 0,
+            f: localStorage.getItem('easycena_drive_folder_id')
+        }));
+    } catch (e) {
+        console.warn('Uloženie identity synchronizovaného súboru zlyhalo:', e);
+    }
+}
+
+// Pred nahratím zálohy posunie pomocnú značku _sync nad všetko, čo poznáme
+// (lokálne zmeny, poslednú synchronizáciu aj najnovšiu zálohu v cloude).
+// Časy jednotlivých typov sa nemenia, takže pravidlá zlučovania ostávajú presné.
+// Vráti predošlú hodnotu (na vrátenie, ak nahratie zlyhá). Pri plnom úložisku
+// pokračuje bez značky — zálohu do Drive to nezablokuje.
+function _posunSyncZnacku(cloudMax) {
+    const meta = _nacitajMeta();
+    if (!meta.modifiedAt) meta.modifiedAt = {};
+    const predosla = meta.modifiedAt._sync;
+    meta.modifiedAt._sync = Math.max(Date.now(), _nacitajLastSync() + 1, (cloudMax || 0) + 1, _maxModifiedAt(meta.modifiedAt) + 1);
+    try { _ulozMeta(meta); } catch (e) { console.warn('Značku _sync sa nepodarilo uložiť:', e); }
+    return predosla;
+}
+// Bezstratové zlúčenie lokálu s cloudom bez dialógu — pre prvú synchronizáciu
+// zariadenia (nemá zapamätanú identitu). Ponuky aj položky z oboch strán ostanú
+// (rovnaké ako odporúčaná voľba "Spojiť oboje"). Výsledok ostane označený ako
+// čakajúci na zálohu (značka _sync > cloudMax = lastSync) a odošle sa.
+function _tichoZlucSCloudom(cloudData, cloudSubor) {
+    const cloudMax = _maxModifiedAt(cloudData && cloudData._meta && cloudData._meta.modifiedAt);
+    _aplikujZalohu(_zlucData(cloudData));
+    _posunSyncZnacku(cloudMax);
+    _ulozLastSync(cloudMax);
+    _ulozLastSyncSubor(cloudSubor);
+    _aktualizujUiPoSync();
+}
+// Je najnovšia záloha v Drive podľa značiek ponúk a katalógu staršia než dáta
+// v tomto zariadení? (Profil zámerne nie — tam by rozdielne hodiny zariadení
+// mohli uprednostniť staršiu verziu.)
+function _cloudStarsiPodlaDat(cloudData) {
+    const l = (_nacitajMeta() || {}).modifiedAt || {};
+    const c = (cloudData && cloudData._meta && cloudData._meta.modifiedAt) || {};
+    return Math.max(c.archiv || 0, c.katalog || 0) < Math.max(l.archiv || 0, l.katalog || 0);
+}
+
+// Pred prvým čistým stiahnutím po aktualizácii appky odložiť lokálny archív
+// a katalóg (len raz, len lokálne). Poistka pre ponuky, ktoré stará verzia
+// nechala len na jednom zariadení — dajú sa potom ručne dohľadať.
+function _ulozPoistnuKopiuPredPrvouSync() {
+    try {
+        if (localStorage.getItem('easycena_pred_prvou_sync')) return;
+        localStorage.setItem('easycena_pred_prvou_sync', JSON.stringify({
+            cas: Date.now(),
+            archiv: archiv,
+            katalog: katalog
+        }));
+    } catch (e) {
+        console.warn('Poistnú kópiu pred prvou synchronizáciou sa nepodarilo uložiť:', e);
+    }
+}
+
+function _vratSyncZnacku(predosla) {
+    try {
+        const meta = _nacitajMeta();
+        if (!meta.modifiedAt) return;
+        if (predosla === undefined) delete meta.modifiedAt._sync;
+        else meta.modifiedAt._sync = predosla;
+        _ulozMeta(meta);
+    } catch (e) { /* bez značky sa správanie len vráti k pôvodnému */ }
+}
+
 // Porovnanie cloud vs lokálne meta voči lastSync timestampu.
 //   cloudZmenaOdSync = cloud má novšie zmeny než som naposledy synchronizoval
 //   localZmenaOdSync = lokál má novšie zmeny než som naposledy synchronizoval
@@ -4187,14 +4333,35 @@ function _ulozLastSync(ms) {
 //   ani jedno        = nič netreba
 // Bez lastSync (po inštalácii / clear cache, lastSync=0) sa porovnáva
 // voči "od počiatku" — čokoľvek > 0 je zmena.
-function _porovnajMeta(cloudData) {
+// cloudSubor (záznam súboru z Drive) pridáva porovnanie podľa identity:
+//   - iný a podľa hodín Googlu NESKÔR vytvorený súbor než ten, s ktorým sme
+//     naposledy synchronizovali = cloud sa zmenil (aj keď značky nie sú vyššie);
+//   - starší súbor (napr. po ručnom zmazaní najnovšieho) zmenu nespustí;
+//   - zariadenie, ktoré si identitu ešte nikdy nezapamätalo (prvá synchronizácia
+//     po aktualizácii appky, iný účet, staré dáta bez značiek), dostane
+//     prvaSynchronizacia = true: volajúci vtedy NEprepíše lokál cloudom naslepo,
+//     ale bezstratovo zlúči (pozri _tichoZlucSCloudom). Dialóg len ak sa podľa
+//     značiek zmenili obe strany.
+function _porovnajMeta(cloudData, cloudSubor) {
     const localMA = (_nacitajMeta() || {}).modifiedAt || {};
     const cloudMA = (cloudData && cloudData._meta && cloudData._meta.modifiedAt) || {};
     const localMax = _maxModifiedAt(localMA);
     const cloudMax = _maxModifiedAt(cloudMA);
     const lastSync = _nacitajLastSync();
+    let cloudZmena = cloudMax > lastSync;
+    let prvaSynchronizacia = false;
+    if (cloudSubor && cloudSubor.id) {
+        const ls = _nacitajLastSyncSubor();
+        if (!ls) {
+            prvaSynchronizacia = true;
+        } else if (!cloudZmena && ls.id !== cloudSubor.id) {
+            const ct = Date.parse(cloudSubor.createdTime || '') || 0;
+            if (!ls.t || !ct || ct > ls.t) cloudZmena = true;
+        }
+    }
     return {
-        cloudZmenaOdSync: cloudMax > lastSync,
+        cloudZmenaOdSync: cloudZmena,
+        prvaSynchronizacia: prvaSynchronizacia,
         localZmenaOdSync: localMax > lastSync,
         localMax: localMax,
         cloudMax: cloudMax,
@@ -4202,9 +4369,13 @@ function _porovnajMeta(cloudData) {
     };
 }
 
-// Pri prvom otvorení appky stiahne najnovšiu zálohu z Drive a ak má
-// novšie zmeny než lokál, automaticky ich aplikuje (toast + reload).
-// Žiadny dialog na štarte — predpokladáme, že lokál nemá pending zmeny.
+// Pri prvom otvorení appky (a po prihlásení) porovná lokál s najnovšou
+// zálohou v Drive:
+//   - zmenil sa len cloud → ticho stiahne (toast + prekreslenie),
+//   - zmenili sa obe strany → dialóg o konflikte,
+//   - zmenil sa len lokál (napr. appka sa zavrela skôr, než prebehla záloha)
+//     → hneď odošle cez _spustiAutoPush (s kontrolou cloudu),
+//   - nič → hotovo.
 async function _skusPullOnOpen() {
     if (_pullOnOpenSpustenyRaz) return;
     _pullOnOpenSpustenyRaz = true;
@@ -4213,26 +4384,65 @@ async function _skusPullOnOpen() {
     try {
         aktualizujCloudStatus('pulling');
         const najnovsi = await _driveNajdiNajnovsiSubor();
-        if (!najnovsi) { aktualizujCloudStatus('ok'); return; }
+        if (!najnovsi) {
+            // Drive je prázdny: ak sú tu dáta, prvá záloha sa vytvorí hneď.
+            if (_lokalCakaNaZalohu() || katalog.length || archiv.length) _spustiAutoPush(true);
+            else aktualizujCloudStatus('ok');
+            return;
+        }
+
+        // Najnovší súbor je ten, s ktorým sme zosynchronizovaní → cloud sa
+        // nezmenil; netreba ho sťahovať (šetrí dáta pri každom otvorení).
+        const ls = _nacitajLastSyncSubor();
+        if (ls && ls.id === najnovsi.id) {
+            if (_lokalCakaNaZalohu()) _spustiAutoPush();
+            else aktualizujCloudStatus('ok');
+            return;
+        }
 
         const cloudData = await _driveStiahniSubor(najnovsi.id);
-        if (!cloudData || !cloudData._meta) { aktualizujCloudStatus('ok'); return; }
+        if (!cloudData || !cloudData._meta) {
+            if (_lokalCakaNaZalohu()) _spustiAutoPush();
+            else aktualizujCloudStatus('ok');
+            return;
+        }
 
-        const cmp = _porovnajMeta(cloudData);
+        const cmp = _porovnajMeta(cloudData, najnovsi);
 
         if (cmp.cloudZmenaOdSync && cmp.localZmenaOdSync) {
             // KONFLIKT — obe strany sa zmenili od posledného sync-u.
             aktualizujCloudStatus('pending');
-            _zobrazKonfliktDialog(cloudData);
-        } else if (cmp.cloudZmenaOdSync) {
-            // Cloud sa zmenil, lokál nie → silent pull + soft reload UI
+            _zobrazKonfliktDialog(cloudData, najnovsi);
+        } else if (cmp.prvaSynchronizacia && (
+                cmp.localZmenaOdSync ||
+                (cmp.lastSync === 0 && (katalog.length || archiv.length)) ||
+                _cloudStarsiPodlaDat(cloudData))) {
+            // Prvá synchronizácia tohto zariadenia a:
+            //  - má vlastné neodoslané zmeny, alebo
+            //  - staré dáta bez značiek, ktoré nikdy neboli v tomto Drive, alebo
+            //  - najnovšia záloha v Drive je podľa značiek ponúk/katalógu STARŠIA
+            //    než dáta tu (napr. najnovšiu niekto v Drive zmazal).
+            // Bezstratovo zlúčiť a výsledok odoslať — nič sa neprepíše naslepo
+            // a nevznikne dialóg, v ktorom by sa dalo omylom zvoliť "Stiahnuť".
+            _tichoZlucSCloudom(cloudData, najnovsi);
+            ukazToast('☁️ Zosúladené so zálohou v Drive', 'info', 3000);
+            _spustiAutoPush();
+        } else if (cmp.cloudZmenaOdSync || cmp.prvaSynchronizacia) {
+            // Cloud sa zmenil (alebo prvá synchronizácia bez vlastných zmien),
+            // lokál nie → čisté stiahnutie: rešpektuje zmazania aj profil z
+            // iných zariadení a nič zbytočne nenahráva.
+            if (cmp.prvaSynchronizacia) _ulozPoistnuKopiuPredPrvouSync();
             _aplikujZalohu(cloudData);
             _ulozLastSync(cmp.cloudMax);
+            _ulozLastSyncSubor(najnovsi);
             const odKoho = (cloudData._meta.deviceLabel) ? ('zo zariadenia ' + cloudData._meta.deviceLabel) : 'z cloudu';
             // Smart reload: re-render UI bez stratiti rozrobenej ponuky/scrollu
             _aktualizujUiPoSync();
             ukazToast('☁️ Stiahnuté novšie zmeny ' + odKoho, 'info', 3000);
             aktualizujCloudStatus('ok');
+        } else if (cmp.localZmenaOdSync) {
+            // Zmenil sa len lokál — odoslať hneď, nečakať na ďalšiu zmenu.
+            _spustiAutoPush();
         } else {
             aktualizujCloudStatus('ok');
         }
@@ -4246,7 +4456,10 @@ async function _skusPullOnOpen() {
 async function _driveNajdiNajnovsiSubor() {
     const folderId = await _driveZistiPriecinokId();
     const q = `'${folderId}' in parents and trashed=false and mimeType='application/json'`;
-    const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=1`;
+    // Poradie podľa času vytvorenia: zálohy sa nikdy neprepisujú, takže je to
+    // poradie nahratí; ručná úprava/premenovanie staršieho súboru v Drive
+    // (mení modifiedTime) ho tak nevydá za najnovší.
+    const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime,createdTime)&orderBy=createdTime desc&pageSize=1`;
     const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + driveAccessToken } });
     if (!resp.ok) {
         const err = new Error(`Drive search failed (${resp.status})`); err.status = resp.status; throw err;
@@ -4267,20 +4480,35 @@ async function _driveStiahniSubor(fileId) {
 }
 
 // Auto-cleanup starých záloh v Drive priečinku — volá sa po každom úspešnom push.
-// Zachová posledných `keepCount` súborov, zvyšok zmaže (presunie do trash).
+// POZOR: mazanie cez Drive API je TRVALÉ (súbory nejdú do koša).
+// Zmaže súbor len vtedy, keď je ZÁROVEŇ za hranicou počtu (keepCount najnovších
+// ostáva vždy) A starší než ZALOHY_MIN_VEK_MS. História tak pokrýva aspoň
+// posledné 2 dni bez ohľadu na to, koľko záloh medzitým vzniklo (predtým len
+// 20 súborov — pri častom zálohovaní menej než deň).
 // Failsafe: pri chybe len zaloguje a tiché vráti — nikdy nezhodí push flow.
-async function _driveVycistiStareZalohy(keepCount = 20) {
+const ZALOHY_PONECHAT_MIN = 100;
+const ZALOHY_MIN_VEK_MS = 2 * 24 * 60 * 60 * 1000;
+async function _driveVycistiStareZalohy(keepCount = ZALOHY_PONECHAT_MIN) {
     if (!driveAccessToken) return;
     try {
         const folderId = await _driveZistiPriecinokId();
         const q = `'${folderId}' in parents and trashed=false and mimeType='application/json'`;
-        const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}&fields=files(id,modifiedTime)&orderBy=modifiedTime desc&pageSize=200`;
+        const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}&fields=files(id,modifiedTime)&orderBy=modifiedTime desc&pageSize=1000`;
         const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + driveAccessToken } });
         if (!resp.ok) return;
         const data = await resp.json();
         const files = data.files || [];
         if (files.length <= keepCount) return;
-        const naMazanie = files.slice(keepCount);
+        // Vek sa meria voči najnovšej zálohe v tom istom zozname — oboje sú
+        // časy Googlu, takže zle nastavené hodiny zariadenia nič nezmažú.
+        const najnovsiCas = Date.parse(files[0].modifiedTime || '');
+        if (!najnovsiCas) return;
+        const hranica = najnovsiCas - ZALOHY_MIN_VEK_MS;
+        const naMazanie = files.slice(keepCount).filter(f => {
+            const t = Date.parse(f.modifiedTime || '');
+            return t && t < hranica;
+        });
+        if (naMazanie.length === 0) return;
         // Mažeme paralelne, ale ignorujeme zlyhania jednotlivých súborov
         await Promise.allSettled(naMazanie.map(f =>
             fetch(`${DRIVE_API_BASE}/files/${f.id}`, {
@@ -4288,7 +4516,7 @@ async function _driveVycistiStareZalohy(keepCount = 20) {
                 headers: { Authorization: 'Bearer ' + driveAccessToken }
             })
         ));
-        console.log(`Drive cleanup: zmazaných ${naMazanie.length} starých záloh, ponechaných ${keepCount}.`);
+        console.log(`Drive cleanup: zmazaných ${naMazanie.length} starých záloh, ponechaných ${files.length - naMazanie.length}.`);
     } catch (err) {
         console.warn('Drive cleanup failed (ignorované):', err);
     }
@@ -4305,13 +4533,18 @@ const AUTOPUSH_DEBOUNCE_MS = 10 * 60 * 1000;  // 10 min ticha = upload
 const AUTOPUSH_MAX_WAIT_MS = 60 * 60 * 1000;  // 1h poistka pri trvalej činnosti
 let _autopushDebounceTimer = null;
 let _autopushMaxWaitTimer = null;
-let _autopushPending = false;
 let _autopushBezi = false;
+
+// Čaká niečo na zálohu? Odvodené z uložených značiek (nie z pamäte stránky),
+// takže to prežije zavretie appky: lokálne zmeny sú novšie než posledná
+// synchronizácia. "Zmaže" sa samo až úspešným nahratím (posunie lastSync).
+function _lokalCakaNaZalohu() {
+    return _maxModifiedAt((_nacitajMeta() || {}).modifiedAt) > _nacitajLastSync();
+}
 
 // Volaná z oznacZmeneny() — naštartuje debounce timer.
 function _naplanujAutoPush() {
-    if (!driveAccessToken) return; // neprihlásený
-    _autopushPending = true;
+    if (!driveAccessToken) return; // neprihlásený — zmena čaká, odošle sa po prihlásení/otvorení
     clearTimeout(_autopushDebounceTimer);
     _autopushDebounceTimer = setTimeout(_spustiAutoPush, AUTOPUSH_DEBOUNCE_MS);
     if (!_autopushMaxWaitTimer) {
@@ -4320,46 +4553,58 @@ function _naplanujAutoPush() {
     aktualizujCloudStatus('pending');
 }
 
-// Spustí sa keď debounce alebo max-wait timer vyprší.
-async function _spustiAutoPush() {
+// Spustí sa keď debounce alebo max-wait timer vyprší, a pri otvorení appky,
+// ak lokálne niečo čaká. vynutit = nahrať aj bez lokálnej zmeny (prvé
+// prihlásenie do prázdneho Drive s dátami, ktoré ešte nemajú značky).
+// Nahráva sa VŽDY cez kontrolu cloudu nižšie — nikdy naslepo.
+async function _spustiAutoPush(vynutit) {
     clearTimeout(_autopushDebounceTimer);
     clearTimeout(_autopushMaxWaitTimer);
     _autopushDebounceTimer = null;
     _autopushMaxWaitTimer = null;
-    if (!_autopushPending) return;
+    if (!vynutit && !_lokalCakaNaZalohu()) return;
     if (!driveAccessToken) return;
     if (_autopushBezi) return;
     _autopushBezi = true;
-    _autopushPending = false;
     aktualizujCloudStatus('pushing');
 
     try {
         // 1. Najprv pull — má cloud novšie zmeny než my máme známe?
         const najnovsi = await _driveNajdiNajnovsiSubor();
         let cloudData = null;
-        if (najnovsi) {
+        // Najnovší súbor je ten, s ktorým sme zosynchronizovaní (súbory sa
+        // nikdy neprepisujú) → cloud sa nezmenil, netreba ho sťahovať.
+        const ls = _nacitajLastSyncSubor();
+        const cloudBezZmeny = najnovsi && ls && ls.id === najnovsi.id;
+        if (najnovsi && !cloudBezZmeny) {
             cloudData = await _driveStiahniSubor(najnovsi.id);
         }
 
+        let cloudMax = 0;
         if (cloudData && cloudData._meta) {
-            const cmp = _porovnajMeta(cloudData);
+            const cmp = _porovnajMeta(cloudData, najnovsi);
+            cloudMax = cmp.cloudMax;
             if (cmp.cloudZmenaOdSync) {
                 // Cloud sa zmenil od posledného sync-u — push by ho prepísal.
                 aktualizujCloudStatus('pending');
-                _zobrazKonfliktDialog(cloudData);
+                _zobrazKonfliktDialog(cloudData, najnovsi);
                 _autopushBezi = false;
                 return;
             }
+            // Prvá synchronizácia: najprv bezstratovo zlúčiť, potom nahrať výsledok.
+            if (cmp.prvaSynchronizacia) _tichoZlucSCloudom(cloudData, najnovsi);
         }
 
         // 2. Žiaden konflikt → silent push
         const folderId = await _driveZistiPriecinokId();
+        _posunSyncZnacku(cloudMax);
         const dataJson = vytvorDataZalohy();
         const localMaxPredPush = _maxModifiedAt((_nacitajMeta() || {}).modifiedAt);
         const ts = new Date(); const pad = (n) => String(n).padStart(2, '0');
         const filename = `easycena_zaloha_${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}_${pad(ts.getHours())}-${pad(ts.getMinutes())}.json`;
-        await _driveUploadJsonSubor(folderId, filename, dataJson);
+        const nahrany = await _driveUploadJsonSubor(folderId, filename, dataJson);
         _ulozLastSync(localMaxPredPush);
+        _ulozLastSyncSubor(nahrany);
         localStorage.setItem('easycena_drive_last_backup', String(Date.now()));
         aktualizujDriveZalohaStatus();
         aktualizujCloudStatus('ok');
@@ -4368,16 +4613,25 @@ async function _spustiAutoPush() {
         _driveVycistiStareZalohy();
     } catch (err) {
         console.warn('Auto-push failed:', err);
-        aktualizujCloudStatus('error');
-        ukazToast('⚠️ Auto-záloha zlyhala — skús neskôr cez "Zálohovať teraz"', 'error', 4000);
-        // Pri 401 nech sa pri ďalšom pokuse riešia tokeny — silent reauth pri ďalšom load-e
+        // Zmeny ostávajú označené ako čakajúce — odošlú sa pri ďalšej zmene
+        // alebo pri ďalšom otvorení appky.
+        if (err && err.status === 401) {
+            aktualizujCloudStatus('expired');
+            ukazToast('🔒 Prihlásenie do Google Drive vypršalo — zmeny čakajú na zálohu. Klikni na „Nesync.“ hore.', 'error', 6000);
+        } else {
+            aktualizujCloudStatus('error');
+            ukazToast('⚠️ Auto-záloha zlyhala — zmeny čakajú, skúsim znova. Hneď: „Zálohovať teraz“.', 'error', 4000);
+        }
     } finally {
         _autopushBezi = false;
     }
 }
 
 // === KONFLIKT DIALOG ===
-function _zobrazKonfliktDialog(cloudData) {
+function _zobrazKonfliktDialog(cloudData, cloudSubor) {
+    // Nikdy dva konfliktné dialógy cez seba (napr. časovač auto-zálohy pri
+    // už otvorenom dialógu).
+    if (document.getElementById('sync-konflikt-overlay')) return;
     const localMeta = _nacitajMeta();
     const cloudDevLabel = (cloudData._meta && cloudData._meta.deviceLabel) || 'iné zariadenie';
     const localDevLabel = (typeof nacitajDeviceLabel === 'function' && nacitajDeviceLabel()) || 'toto zariadenie';
@@ -4398,6 +4652,7 @@ function _zobrazKonfliktDialog(cloudData) {
 
     const overlay = document.createElement('div');
     overlay.className = 'sync-dialog-overlay';
+    overlay.id = 'sync-konflikt-overlay';
     overlay.innerHTML = `
         <div class="sync-dialog">
             <h3>⚠️ Synchronizácia — konflikt</h3>
@@ -4415,7 +4670,7 @@ function _zobrazKonfliktDialog(cloudData) {
             </button>
             <button type="button" class="sync-option" data-action="local">
                 <div class="sync-option-title">💻 Použiť lokálne</div>
-                <div class="sync-option-desc">Cloud sa prepíše dátami z tohto zariadenia.</div>
+                <div class="sync-option-desc">Cloud sa prepíše dátami z tohto zariadenia. Zmeny z iných zariadení, ktoré tu nie sú, sa odstránia zo VŠETKÝCH zariadení (ostanú len v starších zálohách v Drive).</div>
             </button>
             <button type="button" class="sync-cancel">Rozhodnúť neskôr</button>
         </div>
@@ -4423,26 +4678,64 @@ function _zobrazKonfliktDialog(cloudData) {
     overlay.querySelector('.sync-cancel').addEventListener('click', () => _zatvorModal(overlay));
     overlay.addEventListener('click', (e) => { if (e.target === overlay) _zatvorModal(overlay); });
     overlay.querySelectorAll('.sync-option').forEach(btn => {
-        btn.addEventListener('click', () => _vyriesKonflikt(btn.dataset.action, cloudData, overlay));
+        btn.addEventListener('click', () => _vyriesKonflikt(btn.dataset.action, cloudData, overlay, cloudSubor));
     });
     document.body.appendChild(overlay);
 }
 
-async function _vyriesKonflikt(action, cloudData, overlay) {
+async function _vyriesKonflikt(action, cloudData, overlay, cloudSubor) {
+    // "Použiť lokálne" naozaj odstráni zmeny z iných zariadení zo všetkých
+    // zariadení — preto výslovné potvrdenie. Pri "Zrušiť" okno ostáva otvorené.
+    if (action === 'local' && !confirm('Použiť lokálne dáta?\n\nZmeny z iných zariadení, ktoré na tomto zariadení nie sú, sa odstránia zo VŠETKÝCH zariadení. Ostanú len v starších zálohách v Drive.\n\nAk si nie si istý, zvoľ radšej „Spojiť oboje“.')) {
+        return;
+    }
+
     const dialog = overlay.querySelector('.sync-dialog');
     dialog.innerHTML = '<h3>Synchronizujem…</h3><div class="sync-meta">Prosím počkaj.</div>';
 
+    // Počas riešenia konfliktu nesmie paralelne bežať automatická záloha
+    // (nahrala by zbytočný duplicitný súbor).
+    const zablokovalSomAutoPush = !_autopushBezi;
+    if (zablokovalSomAutoPush) _autopushBezi = true;
+
+    let aplikovanieZacate = false;
+    let aplikovane = false;
     try {
+        // Pred vykonaním voľby overiť, či v Drive medzitým nepribudla novšia
+        // záloha (dialóg mohol byť otvorený dlho). Prvá sieťová operácia je len
+        // čítanie — výpadok siete sa prejaví skôr, než sa lokálne niečo zmení.
+        if (cloudSubor && cloudSubor.id) {
+            const teraz = await _driveNajdiNajnovsiSubor();
+            if (teraz && teraz.id !== cloudSubor.id) {
+                const tTeraz = Date.parse(teraz.createdTime || '') || 0;
+                const tPovodny = Date.parse(cloudSubor.createdTime || '') || 0;
+                if (!tTeraz || !tPovodny || tTeraz > tPovodny) {
+                    const novsie = await _driveStiahniSubor(teraz.id);
+                    if (!novsie || !novsie._meta) {
+                        throw new Error('V Drive pribudla novšia záloha, ktorú sa nepodarilo prečítať. Skús to znova neskôr.');
+                    }
+                    _zatvorModal(overlay);
+                    ukazToast('V Drive medzitým pribudla novšia záloha — vyber prosím znova', 'info', 4000);
+                    _zobrazKonfliktDialog(novsie, teraz);
+                    return;
+                }
+            }
+        }
+
+        const cloudMax = _maxModifiedAt(cloudData && cloudData._meta && cloudData._meta.modifiedAt);
+
         if (action === 'local') {
             // Push lokálnu verziu späť do cloudu, lokál sa nemení
             const folderId = await _driveZistiPriecinokId();
+            _posunSyncZnacku(cloudMax);
             const dataJson = vytvorDataZalohy();
             const localMaxPredPush = _maxModifiedAt((_nacitajMeta() || {}).modifiedAt);
             const ts = new Date(); const pad = (n) => String(n).padStart(2, '0');
             const filename = `easycena_zaloha_${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}_${pad(ts.getHours())}-${pad(ts.getMinutes())}.json`;
-            await _driveUploadJsonSubor(folderId, filename, dataJson);
+            const nahrany = await _driveUploadJsonSubor(folderId, filename, dataJson);
             localStorage.setItem('easycena_drive_last_backup', String(Date.now()));
             _ulozLastSync(localMaxPredPush);
+            _ulozLastSyncSubor(nahrany);
             aktualizujDriveZalohaStatus();
             aktualizujCloudStatus('ok');
             _zatvorModal(overlay);
@@ -4457,17 +4750,39 @@ async function _vyriesKonflikt(action, cloudData, overlay) {
         else throw new Error('Neznáma akcia: ' + action);
 
         // Aplikuj výsledok lokálne
+        aplikovanieZacate = true;
         _aplikujZalohu(finalData);
+        aplikovane = true;
 
-        // Push merged/cloud stav späť (aby všetky zariadenia konvergovali na rovnakú verziu)
+        if (action === 'cloud') {
+            // Lokál je teraz presne cloudová verzia — nie je čo nahrávať
+            // (predtým sa nahral zbytočný rovnaký súbor).
+            _ulozLastSync(cloudMax);
+            _ulozLastSyncSubor(cloudSubor);
+            aktualizujCloudStatus('ok');
+            _zatvorModal(overlay);
+            ukazToast('☁️ Stiahnuté z cloudu — reštartujem', 'success', 1500);
+            setTimeout(() => location.reload(), 1500);
+            return;
+        }
+
+        // Zlúčený stav nahrať späť (aby všetky zariadenia konvergovali na rovnakú
+        // verziu). Značka _sync zaručí, že ho ostatné zariadenia spoznajú ako novší.
+        // Poradie je dôležité: najprv značka, potom "cloud videný". Zlúčený stav
+        // už obsahuje všetko z cloudu; ak nahratie nižšie zlyhá, ostane len
+        // "čakajúca" lokálna zmena a odošle sa pri ďalšom otvorení bez dialógu.
+        _posunSyncZnacku(cloudMax);
+        _ulozLastSync(cloudMax);
+        _ulozLastSyncSubor(cloudSubor);
         const folderId = await _driveZistiPriecinokId();
         const ts = new Date(); const pad = (n) => String(n).padStart(2, '0');
         const filename = `easycena_zaloha_${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}_${pad(ts.getHours())}-${pad(ts.getMinutes())}.json`;
         const novyJson = vytvorDataZalohy(); // už beží nad merged dátami v localStorage
         const localMaxPoApply = _maxModifiedAt((_nacitajMeta() || {}).modifiedAt);
-        await _driveUploadJsonSubor(folderId, filename, novyJson);
+        const nahrany = await _driveUploadJsonSubor(folderId, filename, novyJson);
         localStorage.setItem('easycena_drive_last_backup', String(Date.now()));
         _ulozLastSync(localMaxPoApply);
+        _ulozLastSyncSubor(nahrany);
         aktualizujCloudStatus('ok');
 
         _zatvorModal(overlay);
@@ -4477,8 +4792,24 @@ async function _vyriesKonflikt(action, cloudData, overlay) {
         setTimeout(() => location.reload(), 1500);
     } catch (err) {
         console.error('Konflikt resolution failed:', err);
-        dialog.innerHTML = '<h3>❌ Chyba</h3><div class="sync-meta">' + _escapeHtml(err.message || 'sync zlyhal') + '</div><button type="button" class="sync-cancel">Zavrieť</button>';
+        // Ak sa dáta už (aj čiastočne) zapísali, prekresliť zoznamy podľa
+        // skutočného stavu — inak by tlačidlá mierili na staré poradie.
+        if (aplikovanieZacate) {
+            try { _aktualizujUiPoSync(); } catch (e) { /* _aktualizujUiPoSync má vlastnú poistku */ }
+        }
+        let text;
+        if (aplikovane) {
+            text = 'Zlúčené na tomto zariadení. Nahratie do Drive zlyhalo — dokončí sa pri ďalšej synchronizácii (napr. pri ďalšom otvorení appky).';
+            aktualizujCloudStatus('pending');
+        } else if (aplikovanieZacate) {
+            text = 'Zápis do zariadenia sa nepodaril celý (možno je plná pamäť prehliadača). Nič nenahrávaj a obnov stránku. Detail: ' + (err.message || '');
+        } else {
+            text = err.message || 'sync zlyhal';
+        }
+        dialog.innerHTML = '<h3>❌ Chyba</h3><div class="sync-meta">' + _escapeHtml(text) + '</div><button type="button" class="sync-cancel">Zavrieť</button>';
         dialog.querySelector('.sync-cancel').addEventListener('click', () => _zatvorModal(overlay));
+    } finally {
+        if (zablokovalSomAutoPush) _autopushBezi = false;
     }
 }
 
@@ -4512,6 +4843,11 @@ function _zlucData(cloudData) {
         if (cloudData.logo)   merged.logo   = cloudData.logo;
         if (cloudData.podpis) merged.podpis = cloudData.podpis;
     }
+    // Čo lokál vôbec nemá (napr. nové zariadenie), prevezmeme z cloudu bez
+    // ohľadu na značky — inak by zlúčenie nechalo zariadenie bez profilu.
+    if (!merged.profil && cloudData.profil) merged.profil = cloudData.profil;
+    if (!merged.logo && cloudData.logo)     merged.logo   = cloudData.logo;
+    if (!merged.podpis && cloudData.podpis) merged.podpis = cloudData.podpis;
 
     // Archív: per-record podľa modifiedAt (s fallback na _meta.modifiedAt.archiv pre staré záznamy)
     merged.archiv = _zlucArchiv(
@@ -4611,6 +4947,10 @@ async function _stiahniAObnovZoDrive(overlay, fileId, fileName) {
         _aplikujZalohu(data);
         // Sync sa stal — od teraz lokál reflektuje cloud verziu
         _ulozLastSync(_maxModifiedAt((_nacitajMeta() || {}).modifiedAt));
+        // Identitu zabudnúť: správanie po obnove ostáva rovnaké ako doteraz
+        // (pri ďalšom otvorení sa porovná s najnovšou zálohou). Trvalú obnovu
+        // staršej zálohy rieši samostatná oprava (kolo 4).
+        localStorage.removeItem('easycena_last_sync_file');
 
         if (typeof ukazToast === 'function') ukazToast('☁️ Záloha obnovená — aplikácia sa reštartuje', 'success');
         _zatvorModal(overlay);
