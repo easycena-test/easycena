@@ -389,6 +389,21 @@
             font-size: 17px;
             white-space: nowrap;
         }
+        /* Suma ponuky + pod ňou suma uloženého súpisu prác */
+        .archiv-karta-sumy { text-align: right; }
+        .archiv-karta-suma-supis {
+            color: var(--text-muted-color);
+            font-size: 13px;
+            white-space: nowrap;
+            margin-top: 2px;
+        }
+        /* Poznámka pri starom zázname, ktorého ponuku prepísal súpis */
+        .archiv-karta-poznamka {
+            color: var(--text-muted-color);
+            font-size: 12px;
+            font-style: italic;
+            margin: -4px 0 10px;
+        }
         .archiv-stitok {
             display: inline-block;
             padding: 2px 8px;
@@ -1449,6 +1464,8 @@
     </div>
 
     <script src="logo-firmy.js"></script>
+    <script src="cislovanie.js"></script>
+    <script src="archivLogika.js"></script>
     <script src="app.js"></script>
     <script>
         function prepniTab(tabId, element) {

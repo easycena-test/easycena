@@ -1,8 +1,10 @@
-const CACHE_NAME = 'easycena-pro-v8';
+const CACHE_NAME = 'easycena-pro-v10';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './app.js',
+    './cislovanie.js',
+    './archivLogika.js',
     './logo-firmy.js',
     './Roboto-Regular-normal.js',
     // Tučný font pre PDF — bez neho malo PDF vytvorené offline rozbité
@@ -30,6 +32,8 @@ function jeDynamickyAsset(request) {
     return path.endsWith('/') ||
            path.endsWith('/index.html') ||
            path.endsWith('/app.js') ||
+           path.endsWith('/cislovanie.js') ||
+           path.endsWith('/archivLogika.js') ||
            path.endsWith('/site.webmanifest');
 }
 

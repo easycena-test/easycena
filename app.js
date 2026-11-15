@@ -6,7 +6,7 @@ if ('serviceWorker' in navigator) {
 // Verzia aplikácie — zobrazuje sa na konci Nastavení, aby bolo na každom
 // zariadení vidieť, či už beží nová verzia. Pri každom nasadení ju zvýš.
 // Zámerne hneď na začiatku súboru: vypíše sa aj vtedy, keby zvyšok zlyhal.
-const VERZIA_APPKY = '2026-11-09.2';
+const VERZIA_APPKY = '2026-11-12.2';
 
 // Testovacia verzia = tá istá appka nasadená na inej adrese (testovací
 // repozitár, lokálna kópia). Spozná sa podľa adresy: všetko okrem ostrej
@@ -97,10 +97,14 @@ function ulozRozpracovanuPonuku() {
 
     const zlavy = [];
     document.querySelectorAll('.zlava-riadok').forEach(r => {
-        zlavy.push({
+        const zlava = {
             typ: r.querySelector('.zlava-typ').value,
             hodnota: r.querySelector('.zlava-hodnota').value
-        });
+        };
+        // Zámok pôvodnej zľavy v súpise prác — ukladá sa len zamknutý,
+        // aby sa tvar údajov ponuky nezmenil
+        if (r.dataset.zamknuta === 'ano') zlava.zamknuta = 'ano';
+        zlavy.push(zlava);
     });
 
     const data = {
@@ -134,6 +138,8 @@ function ulozRozpracovanuPonuku() {
         polozky: polozky,
         zlavy: zlavy
     };
+    // Súpis prác si pamätá id zdrojového záznamu archívu (prežije aj obnovenie stránky)
+    if (window.jeRezimSupis && window.supisZdrojId != null) data.supisZdrojId = window.supisZdrojId;
 
 
 
@@ -246,6 +252,8 @@ function obnovRozpracovanuPonuku() {
     const data = JSON.parse(localStorage.getItem('easycena_rozpracovana'));
     if (data) {
         window.jeRezimSupis = data.rezimSupisPrac || false;
+        // Väzba súpisu na zdrojový záznam archívu — mimo režimu súpisu sa vymaže
+        window.supisZdrojId = (window.jeRezimSupis && data.supisZdrojId != null) ? data.supisZdrojId : null;
 
         // --- NORMALIZÁCIA VÄZBY (spätná kompatibilita so starými súpismi) ---
         // Staré súpisy bez týchto polí: typ = cenová ponuka, číslo = číslo CP.
@@ -392,24 +400,11 @@ function generujNoveCislo() {
         pocitadlo.pocet = 0;
     }
 
-    // 1. Zistíme najvyššie poradové číslo v Archíve (vylepšená detekcia)
-    let maxVArchive = 0;
-    archiv.forEach(ponuka => {
-        if (ponuka.cislo) {
-            // Najprv vymažeme zo stringu aktuálny rok, aby sa nám neplietol s poradovým číslom
-            let cisloBezRoka = ponuka.cislo.replace(aktualnyRok.toString(), '');
-            // Až teraz vytiahneme zostávajúce číslice
-            let cislaVPonuke = cisloBezRoka.match(/\d+/g);
-            if (cislaVPonuke) {
-                cislaVPonuke.forEach(cisloStr => {
-                    let cislo = parseInt(cisloStr, 10);
-                    if (cislo > maxVArchive) {
-                        maxVArchive = cislo;
-                    }
-                });
-            }
-        }
-    });
+    // 1. Najvyššie poradové číslo v Archíve — len z čísel, ktoré zodpovedajú
+    //    šablóne v aktuálnom roku (cislovanie.js). Predtým sa brala najväčšia
+    //    skupina číslic z hocijakého čísla, takže po Novom roku vyšlo napr.
+    //    CP-2027-2027 a číslice v texte za číslom posúvali poradie.
+    const maxVArchive = najdiMaxPoradie(sablona, aktualnyRok, archiv.map(ponuka => ponuka.cislo));
 
     // 2. Vyberieme väčšie z dvoch: to čo je v Nastaveniach, alebo to z Archívu
     let nasledujuceCislo = Math.max(pocitadlo.pocet, maxVArchive) + 1;
@@ -419,8 +414,7 @@ function generujNoveCislo() {
     localStorage.setItem('pocitadloPonuk', JSON.stringify(pocitadlo));
 
     // 4. Vytvoríme finálny text a vložíme ho do políčka
-    let naformatovaneCislo = nasledujuceCislo.toString().padStart(3, '0');
-    let vysledneCislo = sablona.replace('{ROK}', aktualnyRok).replace('{CISLO}', naformatovaneCislo);
+    let vysledneCislo = zostavCislo(sablona, aktualnyRok, nasledujuceCislo);
     document.getElementById('cislo-ponuky').value = vysledneCislo;
 
     // 5. Aktualizujeme aj číslo v Nastaveniach
@@ -761,6 +755,7 @@ function pripojUdalostiRiadku(div) {
 document.getElementById('nova-ponuka-btn').addEventListener('click', () => {
     if(confirm('Vymazať ponuku a začať novú?')) {
         window.jeRezimSupis = false;
+        window.supisZdrojId = null;
         const banner = document.getElementById('supis-banner');
         if (banner) banner.style.display = 'none';
         document.querySelectorAll('#tab-ponuka input:not([type="checkbox"])').forEach(i => i.value = '');
@@ -1669,39 +1664,48 @@ function zmazZKatalogu(index) {
 // ==========================================
 document.getElementById('ulozit-archiv-btn').addEventListener('click', () => {
     ulozRozpracovanuPonuku();
-    const data = JSON.parse(localStorage.getItem('easycena_rozpracovana'));
+    const rozpracovane = JSON.parse(localStorage.getItem('easycena_rozpracovana'));
 
-    data.datum = new Date().toLocaleDateString('sk-SK');
-    data.sumaZobrazena = document.getElementById('konecna-suma').innerText;
-    // Uloženie vlajky, ak ukladáme Súpis prác
-    if (window.jeRezimSupis) {
-        data.obsahujeSupis = true;
+    // Kam sa ukladá (archivLogika.js):
+    //  - ponuka: podľa čísla ako doteraz, súpis uložený v zázname ostane;
+    //  - súpis prác: do kľúča `supis` zdrojového záznamu (podľa id),
+    //    údaje ponuky ostanú bez zmeny.
+    // Pole archiv sa tu ešte nemení — dostaneme nové pole.
+    const ulozenie = pripravUlozenieDoArchivu(archiv, rozpracovane, {
+        rezimSupis: !!window.jeRezimSupis,
+        datum: new Date().toLocaleDateString('sk-SK'),
+        sumaZobrazena: document.getElementById('konecna-suma').innerText,
+        // Per-record timestamp pre 3-way merge — vždy aktuálny pri ukladaní
+        teraz: Date.now()
+    });
+
+    // Zápis do úložiska. Pri chybe (plné úložisko) ostane archív v pamäti
+    // v pôvodnom stave a úspech sa nehlási.
+    try {
+        localStorage.setItem('easycena_archiv', JSON.stringify(ulozenie.archiv));
+    } catch (e) {
+        console.error('Uloženie do archívu zlyhalo:', e);
+        alert('❌ Uloženie do archívu zlyhalo — úložisko zariadenia je pravdepodobne plné. Nič sa neuložilo.');
+        return;
     }
-
-    // Per-record timestamp pre 3-way merge — vždy aktuálny pri ukladaní
-    data.modifiedAt = Date.now();
-
-    // --- NOVÁ LOGIKA: Ochrana proti duplicitám v archíve ---
-    // Skontrolujeme, či ponuka s rovnakým číslom už v archíve existuje
-    const existujuciIndex = archiv.findIndex(p => p.cislo === data.cislo);
-
-    if (existujuciIndex !== -1) {
-        // Ponuka existuje: Zachováme jej pôvodné technické ID a len prepíšeme dáta
-        data.id = archiv[existujuciIndex].id;
-        archiv[existujuciIndex] = data;
-    } else {
-        // Ponuka neexistuje: Vytvoríme novú s novým technickým ID a dáme ju na vrch
-        data.id = Date.now();
-        archiv.unshift(data);
+    archiv = ulozenie.archiv;
+    if (window.jeRezimSupis) window.supisZdrojId = ulozenie.zaznam.id;
+    try {
+        // Uložíme späť aj s prideleným ID (v súpise s väzbou na zdrojový záznam)
+        localStorage.setItem('easycena_rozpracovana', JSON.stringify(ulozenie.rozpracovane));
+    } catch (e) {
+        console.error('Zápis rozpracovaných dát zlyhal:', e);
     }
-    // --------------------------------------------------------
-
-    localStorage.setItem('easycena_archiv', JSON.stringify(archiv));
-    localStorage.setItem('easycena_rozpracovana', JSON.stringify(data)); // Uložíme späť aj s prideleným ID
     if (typeof oznacZmeneny === 'function') oznacZmeneny('archiv');
     vykresliArchiv();
 
-    alert('Úspešne uložené v archíve.');
+    if (ulozenie.vysledok === 'supis-ulozeny') {
+        alert('Súpis prác je uložený v archíve. Cenová ponuka ostala bez zmeny.');
+    } else if (ulozenie.vysledok === 'supis-novy-zaznam') {
+        alert('Pôvodná cenová ponuka k tomuto súpisu sa v archíve nenašla, preto sa nič neprepísalo. Súpis prác je uložený ako nový záznam.');
+    } else {
+        alert('Úspešne uložené v archíve.');
+    }
 });
 
 // Stav pohľadu na archív (hľadanie + filter + triedenie)
@@ -1810,18 +1814,31 @@ function vykresliArchiv() {
             ? `<button class="btn-success btn-small archiv-btn-supis archiv-btn-supis-otvor">✏️ Otvoriť Súpis prác</button>`
             : `<button class="btn-success btn-small archiv-btn-supis">📝 Vytvoriť Súpis prác</button>`;
 
+        // Suma je suma ponuky; uložený súpis prác má svoju sumu v riadku pod ňou
+        const supisSumaHtml = ponuka.supis
+            ? `<div class="archiv-karta-suma-supis">Súpis: ${_escapeHtml(ponuka.supis.sumaZobrazena)} €</div>`
+            : '';
+        // Starý záznam, ktorého ponuku prepísal súpis v staršej verzii appky
+        const poznamkaPrepisHtml = jePonukaPrepisanaSupisom(ponuka)
+            ? `<div class="archiv-karta-poznamka">Pôvodnú cenovú ponuku prepísal súpis prác v staršej verzii appky.</div>`
+            : '';
+
         div.innerHTML = `
             <div class="archiv-karta-hlavicka">
                 <div class="archiv-karta-cislo">
                     ${_escapeHtml(ponuka.cislo || 'Bez-čísla')}
                     ${stitokHtml}
                 </div>
-                <div class="archiv-karta-suma">${_escapeHtml(ponuka.sumaZobrazena)} €</div>
+                <div class="archiv-karta-sumy">
+                    <div class="archiv-karta-suma">${_escapeHtml(ponuka.sumaZobrazena)} €</div>
+                    ${supisSumaHtml}
+                </div>
             </div>
             <div class="archiv-karta-zakaznik">
                 ${_escapeHtml(ponuka.meno || 'Neznámy zákazník')}
                 <span class="archiv-karta-datum">(${_escapeHtml(ponuka.datum)})</span>
             </div>
+            ${poznamkaPrepisHtml}
             <div class="archiv-karta-tlacidla">
                 ${btnSupisHtml}
                 <button class="btn-primary btn-small archiv-btn-duplikuj">Duplikovať</button>
@@ -1904,7 +1921,12 @@ function vykresliArchiv() {
 })();
 
 function zmazZArchivu(id) {
-    if(confirm('Naozaj zmazať z archívu?')) {
+    const zaznam = archiv.find(p => p.id === id);
+    // Záznam so súpisom: zmaže sa ponuka aj jej súpis prác
+    const otazka = (zaznam && (zaznam.supis || zaznam.obsahujeSupis))
+        ? 'Naozaj zmazať z archívu? Zmaže sa cenová ponuka aj jej súpis prác.'
+        : 'Naozaj zmazať z archívu?';
+    if(confirm(otazka)) {
         archiv = archiv.filter(p => p.id !== id);
         localStorage.setItem('easycena_archiv', JSON.stringify(archiv));
         if (typeof oznacZmeneny === 'function') oznacZmeneny('archiv');
@@ -1916,25 +1938,11 @@ function nacitajZArchivu(id) {
     if(!confirm('Aktuálne rozpísaná ponuka sa prepíše. Pokračovať?')) return;
     const ponuka = archiv.find(p => p.id === id);
     if(ponuka) {
-        // Hlboká kópia — aby sme úpravami neovplyvnili záznam v archíve
-        const dataNaPlochu = JSON.parse(JSON.stringify(ponuka));
-
-        // DÔLEŽITÉ: "Otvoriť" znamená otvoriť ako CENOVÚ PONUKU, aj keď bola
-        // ponuka v archíve naposledy uložená v režime Súpis prác. Pre režim
-        // súpisu existuje samostatné tlačidlo "Otvoriť Súpis prác".
-        dataNaPlochu.rezimSupisPrac = false;
-        if (Array.isArray(dataNaPlochu.polozky)) {
-            dataNaPlochu.polozky.forEach(p => {
-                if (p.typRiadku === 'balik' && Array.isArray(p.polozky)) {
-                    p.polozky.forEach(bp => { delete bp.zamknutaCena; });
-                } else {
-                    delete p.zamknutaCena;
-                }
-            });
-        }
-        if (Array.isArray(dataNaPlochu.zlavy)) {
-            dataNaPlochu.zlavy.forEach(z => { delete z.zamknuta; });
-        }
+        // DÔLEŽITÉ: "Otvoriť" znamená otvoriť CENOVÚ PONUKU (vrchnú úroveň
+        // záznamu) bez zámkov a bez uloženého súpisu. Pre režim súpisu existuje
+        // samostatné tlačidlo "Otvoriť Súpis prác". Kópia — záznam v archíve
+        // sa nemení (archivLogika.js).
+        const dataNaPlochu = otvorPonukuZoZaznamu(ponuka);
         // Pre istotu vypneme režim aj na úrovni runtime, kým bežíme obnovu
         window.jeRezimSupis = false;
 
@@ -1950,37 +1958,13 @@ function vytvorSupisPrac(id) {
     
     const ponuka = archiv.find(p => p.id === id);
     if(ponuka) {
-        let supisData = JSON.parse(JSON.stringify(ponuka));
-        supisData.rezimSupisPrac = true;
-
-        // --- VÄZBA SÚPISU: prevezmi predvoľbu z profilu ---
+        // Uložený súpis sa otvorí presne tak, ako bol uložený. Inak vznikne
+        // nový súpis z ponuky: predvoľby väzby, nadpisu a podpisovej časti
+        // z profilu, zamknuté pôvodné položky aj zľavy. Pri väzbe na cenovú
+        // ponuku sa predvyplní číslo z CP (appka nepozná číslo zákazky/faktúry).
+        // Súpis si pamätá id zdrojového záznamu (archivLogika.js).
         const profilV = JSON.parse(localStorage.getItem('easycena_profil')) || {};
-        supisData.supisVazbaTyp    = profilV.supisVazbaTyp || 'cp';
-        supisData.supisVazbaCustom = profilV.supisVazbaCustom || '';
-        // Nadpis súpisu — predvyplň z profilu (dá sa prepísať v hlavičke súpisu)
-        supisData.supisNadpis      = profilV.supisNadpis || '';
-        // Podpisová časť — predvyplň z profilu (dá sa prepísať v hlavičke súpisu)
-        supisData.supisPodpisRezim = profilV.supisPodpisRezim || 'ciary';
-        // Pri väzbe na cenovú ponuku predvyplň číslo z CP; inak nechaj prázdne
-        // na manuálne zadanie (appka nepozná číslo zákazky/faktúry).
-        supisData.supisVazbaCislo  = (supisData.supisVazbaTyp === 'cp')
-            ? _cisteCisloCP(ponuka.cislo)
-            : '';
-
-        // --- NOVÉ: INJEKCIA ZÁMKU PRE STARÉ POLOŽKY A ZĽAVY ---
-        if (supisData.polozky) {
-            supisData.polozky.forEach(p => {
-                if (p.typRiadku === 'balik') {
-                    p.polozky.forEach(bp => bp.zamknutaCena = 'ano');
-                } else {
-                    p.zamknutaCena = 'ano';
-                }
-            });
-        }
-        if (supisData.zlavy) {
-            supisData.zlavy.forEach(z => z.zamknuta = 'ano');
-        }
-        // ------------------------------------------------------
+        const supisData = otvorSupisZoZaznamu(ponuka, profilV, _cisteCisloCP(ponuka.cislo));
 
         localStorage.setItem('easycena_rozpracovana', JSON.stringify(supisData));
         obnovRozpracovanuPonuku();
@@ -2029,7 +2013,8 @@ function _zobrazDuplikatDialog(staraPonuka) {
 // Vykoná samotné duplikovanie. aktualizovatCeny = true → dotiahne ceny z cenníka.
 function _vykonajDuplikat(staraPonuka, aktualizovatCeny) {
     // Vytvoríme hlbokú kópiu, aby sme omylom neprepísali originál v archíve
-    let novaPonuka = JSON.parse(JSON.stringify(staraPonuka));
+    // Kópia bez uloženého súpisu prác a súpisových príznakov (archivLogika.js)
+    let novaPonuka = odstranSupisoveKluce(staraPonuka);
 
     // 1. Zmažeme staré identifikátory a dátumy, aby to bola "nová" ponuka
     delete novaPonuka.id;
@@ -2187,6 +2172,9 @@ document.getElementById('ulozit-profil-btn').addEventListener('click', () => {
     let pocitadlo = JSON.parse(localStorage.getItem('pocitadloPonuk')) || { rok: aktualnyRok, pocet: 0 };
 
     pocitadlo.pocet = noveCislo - 1;
+    // Ručne nastavené „Nasledujúce číslo“ platí pre aktuálny rok — inak by ho
+    // generujNoveCislo pri starom roku v počítadle hneď vynulovalo.
+    pocitadlo.rok = aktualnyRok;
     localStorage.setItem('pocitadloPonuk', JSON.stringify(pocitadlo));
 
     alert('Profil uložený.');
@@ -2232,7 +2220,8 @@ function nacitajProfil() {
     
     let aktualnyRok = new Date().getFullYear();
     let pocitadlo = JSON.parse(localStorage.getItem('pocitadloPonuk')) || { rok: aktualnyRok, pocet: 0 };
-    document.getElementById('profil-pocitadlo').value = pocitadlo.pocet + 1;
+    // Počítadlo z minulého roka sa v novom roku nuluje → ďalšie číslo je 1.
+    document.getElementById('profil-pocitadlo').value = (pocitadlo.rok < aktualnyRok) ? 1 : pocitadlo.pocet + 1;
 
     // Viditeľnosť per‑ponuka DPH prepínača podľa toho, či je firma platca DPH
     if (typeof aktualizujDPHprepinacViditelnost === 'function') aktualizujDPHprepinacViditelnost();
@@ -4879,8 +4868,15 @@ function _zlucArchiv(localArr, cloudArr, localFallback, cloudFallback) {
     cloudArr.forEach(p => {
         const ts = (typeof p.modifiedAt === 'number') ? p.modifiedAt : cloudFallback;
         const existing = map.get(p.id);
-        if (!existing || ts > existing.ts) {
+        if (!existing) {
             map.set(p.id, { ponuka: p, ts: ts });
+        } else if (ts > existing.ts) {
+            // Vyhrá cloud — uložený súpis prác z lokálnej verzie sa nestratí
+            // (zariadenie so starou verziou appky ho pri uložení ponuky zahodí)
+            map.set(p.id, { ponuka: zlucZaznamSoSupisom(p, existing.ponuka), ts: ts });
+        } else {
+            // Vyhrá lokálna verzia — uložený súpis prác z cloudu sa nestratí
+            map.set(p.id, { ponuka: zlucZaznamSoSupisom(existing.ponuka, p), ts: existing.ts });
         }
     });
     // Zoradenie podľa id desc (chronologicky najnovšie hore — ako v existujúcom UI)
