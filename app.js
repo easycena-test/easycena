@@ -6,7 +6,96 @@ if ('serviceWorker' in navigator) {
 // Verzia aplikácie — zobrazuje sa na konci Nastavení, aby bolo na každom
 // zariadení vidieť, či už beží nová verzia. Pri každom nasadení ju zvýš.
 // Zámerne hneď na začiatku súboru: vypíše sa aj vtedy, keby zvyšok zlyhal.
-const VERZIA_APPKY = '2026-11-12.2';
+const VERZIA_APPKY = '2026-11-15.1';
+
+// =====================================================
+// POISTKA: NEÚPLNÁ AKTUALIZÁCIA
+// =====================================================
+// app.js potrebuje funkcie zo súborov, ktoré index.html načíta PRED ním
+// (cislovanie.js, archivLogika.js). Keď sa pri aktualizácii niektorý z nich
+// nestiahne (slabý signál, appka otvorená bez internetu tesne po nasadení),
+// appka by sa tvárila, že funguje, ale nevykreslila by archív, prvé písanie
+// by prepísalo rozpracovanú ponuku prázdnou, ponuka by dostala zlé alebo
+// žiadne číslo a uloženie by mohlo prepísať inú ponuku v archíve.
+// Poistka preto ešte pred všetkým ostatným overí, že tie funkcie existujú.
+// Ak nie: skryje celú appku, ukáže hlásenie a zastaví zvyšok app.js (throw).
+// Nezapne sa žiadne tlačidlo, automatické ukladanie, časovač ani
+// synchronizácia s Google Drive, takže sa nič nezapíše.
+// Registrácia service workera je zámerne NAD poistkou: beží aj vtedy, aby si
+// prehliadač pri najbližšom otvorení s internetom chýbajúce súbory stiahol.
+// ÚDRŽBA: zoznam = presne tie funkcie z pomocných súborov, ktoré app.js volá.
+// Nový pomocný súbor alebo nové volanie doplň sem v tom istom commite ako
+// <script> v index.html a záznamy v service-worker.js (stráži to
+// testy/poistka.test.js). Existujúcu funkciu nepremenúvaj ani nemeň jej
+// význam, radšej pridaj novú. Funkcie v pomocných súboroch píš ako
+// „function meno()“ a bez kódu, ktorý by pri načítaní mohol spadnúť.
+(function poistkaNeuplnaAktualizacia() {
+    let chybajuce;
+    try {
+        const potrebne = {
+            'cislovanie.js': [typeof najdiMaxPoradie, typeof zostavCislo],
+            'archivLogika.js': [typeof odstranSupisoveKluce, typeof jePonukaPrepisanaSupisom,
+                typeof pripravUlozenieDoArchivu, typeof otvorPonukuZoZaznamu,
+                typeof otvorSupisZoZaznamu, typeof zlucZaznamSoSupisom]
+        };
+        chybajuce = Object.keys(potrebne)
+            .filter(subor => potrebne[subor].some(typ => typ !== 'function'));
+    } catch (e) {
+        // Samotná kontrola zlyhala (nemalo by sa stať) — radšej zastaviť než riskovať.
+        chybajuce = ['kontrola súborov zlyhala'];
+    }
+    if (chybajuce.length === 0) return; // všetko je na mieste, appka beží normálne
+
+    try {
+        // 1) Skryje všetko na stránke (aj prvky pridané neskôr), ostane len
+        //    hlásenie. Skryté prvky sa nedajú stlačiť myšou, prstom ani
+        //    klávesnicou – ani Export/Obnova zálohy, ktoré volajú app.js z HTML.
+        const styl = document.createElement('style');
+        styl.textContent = 'body > :not(#poistka-hlasenie) { display: none !important; }';
+        document.head.appendChild(styl);
+
+        // 2) Hlásenie. Pevný text bez údajov používateľa, innerHTML je tu bezpečný;
+        //    technický riadok (názvy súborov, verzia, adresa) ide cez textContent.
+        //    Odseky sú <div> a zvýraznenie <b>: index.html má pre p a strong
+        //    pravidlá s !important (iná farba).
+        const hlasenie = document.createElement('div');
+        hlasenie.id = 'poistka-hlasenie';
+        hlasenie.setAttribute('role', 'alert');
+        hlasenie.style.cssText = 'box-sizing:border-box;width:calc(100% - 32px);max-width:520px;margin:24px auto;padding:20px;' +
+            'background:#1e1e1e;color:#ffffff;border:2px solid #facc15;border-radius:10px;' +
+            'font-family:sans-serif;font-size:16px;line-height:1.5;';
+        hlasenie.innerHTML =
+            '<h2 style="margin:0 0 12px;color:#facc15;font-size:20px;">Aktualizácia sa nestiahla celá</h2>' +
+            '<div style="margin:0 0 12px;">Do tohto zariadenia sa nestiahli všetky časti novej verzie appky. ' +
+            'Appka sa preto zastavila, aby nevznikla ponuka so zlým číslom a aby sa neprepísala uložená ponuka.</div>' +
+            '<div style="margin:0 0 12px;">Nič sa nezmenilo ani nestratilo – ponuky, katalóg, nastavenia ' +
+            'aj rozpísaná ponuka ostali uložené v zariadení.</div>' +
+            '<div style="margin:0 0 12px;"><b>Nemaž údaje prehliadača ani appku – zmazali by sa uložené ponuky.</b></div>' +
+            '<div style="margin:0 0 4px;"><b>Čo urobiť:</b></div>' +
+            '<ol style="margin:0 0 16px;padding-left:22px;">' +
+            '<li>Pripoj zariadenie na internet (pri slabom signáli radšej na Wi-Fi).</li>' +
+            '<li>Stlač tlačidlo <b>Skúsiť znova</b> (alebo appku úplne zavri, aj zo zoznamu otvorených aplikácií, a znova otvor).</li>' +
+            '<li>Keď sa appka načíta, nechaj ju aspoň minútu otvorenú s internetom. Až potom bude fungovať aj bez internetu.</li>' +
+            '</ol>' +
+            '<button type="button" style="background:#facc15;color:#111827;">Skúsiť znova</button>' +
+            '<div style="margin:16px 0 0;font-size:14px;color:#9ca3af;">Ak sa hlásenie ukáže aj s internetom, ' +
+            'počkaj asi 10 minút a skús znova. Keď nepomôže ani to, odfoť túto obrazovku a pošli fotku ' +
+            'správcovi appky.</div>';
+        const technicky = document.createElement('div');
+        technicky.style.cssText = 'margin:8px 0 0;font-size:13px;color:#9ca3af;';
+        technicky.textContent = 'Chýba: ' + chybajuce.join(', ') + ' · verzia ' + VERZIA_APPKY + ' · ' + location.hostname;
+        hlasenie.appendChild(technicky);
+        document.body.appendChild(hlasenie);
+        hlasenie.querySelector('button').addEventListener('click', () => location.reload());
+    } catch (e) {
+        // Keby sa hlásenie nedalo zobraziť: aspoň skryť celú stránku a jednoduchá správa.
+        try { document.documentElement.style.display = 'none'; } catch (e2) { /* nič viac sa nedá */ }
+        alert('Aktualizácia sa nestiahla celá. Pripoj sa na internet a appku zavri a znova otvor.');
+    }
+
+    // 3) Zastaví zvyšok app.js, aj keby hlásenie zlyhalo. Chyba v konzole je zámerná.
+    throw new Error('EasyCena poistka: nenačítal sa ' + chybajuce.join(', ') + ' — appka zastavená, nič sa nezapísalo.');
+})();
 
 // Testovacia verzia = tá istá appka nasadená na inej adrese (testovací
 // repozitár, lokálna kópia). Spozná sa podľa adresy: všetko okrem ostrej
